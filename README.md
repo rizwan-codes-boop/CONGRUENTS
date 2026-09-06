@@ -1,5 +1,20 @@
 # CONGRuENTS — reconstructed C production tree
 
+## Inputs and table preparation (Week 2)
+
+See [docs/WEEK2_REVIEW.md](docs/WEEK2_REVIEW.md) for the catalogue, optional
+Astropy units, C galaxy properties/radiation and Python-owned NumPy IC/BS/SY tables.
+Python handles storage, caching and orchestration; C performs numerical work.
+Run the small-grid example twice to verify cache reuse:
+
+```sh
+make DEPENDENCY_ROOT=../CONGRUENTS-c check test-week1 test-week2
+PYTHONPATH=src python examples/week2.py
+```
+
+Use the astro Python environment for the optional unit tests. The example is
+preparation-only at smoke-test resolution, not a final galaxy spectrum.
+
 ## Python–C development (Week 1)
 
 The pilot shared library and Python bindings are documented in
