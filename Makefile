@@ -68,11 +68,18 @@ shared: compiler-check $(SHARED_LIBRARY)
 build:
 	mkdir -p $@
 
-$(SHARED_LIBRARY): csrc/congruents.c csrc/include/congruents.h CR_spectra/ionisation.h physical_constants.h | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -fvisibility=hidden $(SHARED_FLAGS) $< $(LDLIBS) -o $@
+$(SHARED_LIBRARY): csrc/congruents.c csrc/preparation.c csrc/internal.h csrc/include/congruents.h $(MODEL_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -fvisibility=hidden $(SHARED_FLAGS) csrc/congruents.c csrc/preparation.c $(LDLIBS) -o $@
 
 build/direct_ionisation: tests/direct_ionisation.c CR_spectra/ionisation.h physical_constants.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@
 
 test-week1: shared build/direct_ionisation
-	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_week1.py -v
+
+.PHONY: test-week2
+build/direct_preparation: tests/direct_preparation.c $(MODEL_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@
+
+test-week2: shared build/direct_preparation
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_week2.py -v

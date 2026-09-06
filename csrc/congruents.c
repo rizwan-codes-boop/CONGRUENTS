@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "../CR_spectra/ionisation.h"
 
-struct cg_context { int threads; };
+#include "internal.h"
 const char *cg_version(void) { return "0.1.0"; }
 unsigned cg_abi_version(void) { return 1; }
 int cg_openmp_enabled(void) {
@@ -49,4 +49,3 @@ int cg_ionisation(const cg_context *context, size_t count,
     }
     return bad ? CG_NUMERIC : CG_OK;
 }
-
