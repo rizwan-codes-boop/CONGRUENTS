@@ -13,6 +13,8 @@
 /data/
 /output/
 /dist/
+/build/
+*.egg-info/
 
 # Python environments and caches
 .venv/

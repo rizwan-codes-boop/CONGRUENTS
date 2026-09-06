@@ -1,5 +1,19 @@
 # CONGRuENTS — reconstructed C production tree
 
+## Python–C development (Week 1)
+
+The pilot shared library and Python bindings are documented in
+[docs/WEEK1_REVIEW.md](docs/WEEK1_REVIEW.md). From this development checkout,
+with the existing sibling dependency installation:
+
+```sh
+make DEPENDENCY_ROOT=../CONGRUENTS-c check test-week1
+PYTHONPATH=src python3 examples/week1.py
+```
+
+This exposes the unchanged C ionisation function, not yet the complete galaxy
+solver. Physics remains in C, including the pilot's OpenMP batch loop.
+
 CONGRuENTS produces cosmic-ray, neutrino, gamma-ray, and radio non-thermal
 spectra for galaxy catalogues. This folder preserves the end-to-end model in C
 and restores the files and build dependencies absent from the available source
