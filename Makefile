@@ -2,16 +2,17 @@ SHELL := /bin/sh
 
 # The published source uses GNU C nested functions, so Apple Clang is not a
 # compatible compiler. A project-local conda-forge GNU compiler is vendored.
-GCC_PACKAGE := $(firstword $(wildcard .conda-pkgs/gcc_impl_osx-arm64-*/bin/arm64-apple-darwin*-gcc))
-GCC_LIBDIR := $(firstword $(wildcard .conda-pkgs/libgcc-devel_osx-arm64-*/lib/gcc/arm64-apple-darwin*/*))
+DEPENDENCY_ROOT ?= .
+GCC_PACKAGE := $(firstword $(wildcard $(DEPENDENCY_ROOT)/.conda-pkgs/gcc_impl_osx-arm64-*/bin/arm64-apple-darwin*-gcc))
+GCC_LIBDIR := $(firstword $(wildcard $(DEPENDENCY_ROOT)/.conda-pkgs/libgcc-devel_osx-arm64-*/lib/gcc/arm64-apple-darwin*/*))
 CC := $(GCC_PACKAGE)
 
-CPPFLAGS := -I. -ICR_spectra -I.deps/include -Ivendor/cubature -DCONGRUENTS_USE_SYSTEM_OPENMP
+CPPFLAGS := -I. -ICR_spectra -I$(DEPENDENCY_ROOT)/.deps/include -I$(DEPENDENCY_ROOT)/vendor/cubature -DCONGRUENTS_USE_SYSTEM_OPENMP
 CFLAGS := -std=gnu11 -O3 -fopenmp -Wall -Wextra \
           -Wno-unused-function -Wno-unused-parameter
-LDLIBS := .deps/lib/libgsl.a .deps/lib/libgslcblas.a \
-          .deps/lib/libcubature.a -L$(GCC_LIBDIR) -L.deps/lib \
-          -lemutls_w -lm -Wl,-rpath,$(CURDIR)/.deps/lib
+LDLIBS := $(DEPENDENCY_ROOT)/.deps/lib/libgsl.a $(DEPENDENCY_ROOT)/.deps/lib/libgslcblas.a \
+          $(DEPENDENCY_ROOT)/.deps/lib/libcubature.a -L$(GCC_LIBDIR) -L$(DEPENDENCY_ROOT)/.deps/lib \
+          -lemutls_w -lm -Wl,-rpath,$(abspath $(DEPENDENCY_ROOT))/.deps/lib
 
 BIN_DIR := bin
 PROGRAMS := $(BIN_DIR)/create_interp_objects $(BIN_DIR)/spectra
@@ -23,7 +24,7 @@ all: compiler-check $(PROGRAMS)
 
 compiler-check:
 	@test -x "$(CC)" || { echo "GNU GCC is missing. See README.md."; exit 1; }
-	@test -f .deps/lib/libgsl.a -a -f .deps/lib/libcubature.a || { echo "Local GSL/cubature libraries are missing. See README.md."; exit 1; }
+	@test -f $(DEPENDENCY_ROOT)/.deps/lib/libgsl.a -a -f $(DEPENDENCY_ROOT)/.deps/lib/libcubature.a || { echo "Local GSL/cubature libraries are missing. See README.md."; exit 1; }
 
 $(BIN_DIR):
 	mkdir -p $@
@@ -49,3 +50,29 @@ run: all
 
 clean:
 	rm -rf $(BIN_DIR)
+
+# Week-1 pilot library. Existing production executables remain unchanged.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+LIB_SUFFIX := dylib
+SHARED_FLAGS := -dynamiclib
+else
+LIB_SUFFIX := so
+SHARED_FLAGS := -shared
+endif
+PYTHON ?= python3
+SHARED_LIBRARY := build/libcongruents.$(LIB_SUFFIX)
+.PHONY: shared test-week1
+shared: compiler-check $(SHARED_LIBRARY)
+
+build:
+	mkdir -p $@
+
+$(SHARED_LIBRARY): csrc/congruents.c csrc/include/congruents.h CR_spectra/ionisation.h physical_constants.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -fvisibility=hidden $(SHARED_FLAGS) $< $(LDLIBS) -o $@
+
+build/direct_ionisation: tests/direct_ionisation.c CR_spectra/ionisation.h physical_constants.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@
+
+test-week1: shared build/direct_ionisation
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
