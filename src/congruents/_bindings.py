@@ -1,4 +1,3 @@
-"""Explicit ctypes ABI, following the SLUG bayesphot loading pattern."""
 import ctypes as ct
 import os
 from pathlib import Path
