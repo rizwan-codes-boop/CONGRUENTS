@@ -1,4 +1,4 @@
-"""Week-2 preparation: orchestration and file I/O in Python, physics in C."""
+"""Python serial preparation with a native, galaxy-parallel property loop."""
 from array import array
 import bisect
 import ctypes as ct
@@ -11,7 +11,8 @@ import struct
 import sys
 import tempfile
 import threading
-from contextlib import ExitStack
+from . import serial, constants
+import scipy
 import numpy as np
 
 from ._bindings import DoublePointer as DP, check
@@ -19,8 +20,6 @@ from .inputs import Galaxy, Grid
 from .model import Context
 
 P = ct.c_void_p
-SP = ct.POINTER(ct.c_size_t)
-PP = ct.POINTER(P)
 FIELDS = ("3000", "4000", "7500", "UV", "CMB", "FIR")
 KINDS = ("emission", "gamma", "bs", "sy")
 PROPERTY_NAMES = ("height_pc", "density_cm3", "magnetic_field_gauss",
@@ -30,25 +29,8 @@ PROPERTY_NAMES = ("height_pc", "density_cm3", "magnetic_field_gauss",
 RADIATION_NAMES = ("CMB", "FIR", "3000", "4000", "7500", "UV", "total")
 
 def bind(lib):
-    signatures = {
-        "cg_galaxies": ([P, ct.c_size_t, DP, DP], ct.c_int),
-        "cg_preparation_bounds": ([DP, ct.c_size_t, DP, DP], ct.c_int),
-        "cg_radiation": ([DP, ct.c_size_t, DP, DP, DP, DP], ct.c_int),
-        "cg_table_create": ([ct.c_int, ct.c_int, ct.c_double, ct.c_size_t,
-                             ct.c_size_t, DP, PP], ct.c_int),
-        "cg_table_import": ([ct.c_size_t, ct.c_size_t, DP, DP, DP, PP], ct.c_int),
-        "cg_table_borrow": ([ct.c_size_t, ct.c_size_t, DP, DP, DP, PP], ct.c_int),
-        "cg_table_destroy": ([P], None),
-        "cg_table_shape": ([P, SP, SP], ct.c_int),
-        "cg_table_copy": ([P, DP, DP, DP], ct.c_int),
-        "cg_table_eval": ([P, ct.c_size_t, DP, DP, DP], ct.c_int),
-        "cg_temperature_grid": ([ct.c_int, ct.c_double, ct.c_double, ct.c_double,
-                                  ct.c_size_t, DP, SP], ct.c_int),
-        "cg_combine_ic": ([DP, PP, ct.c_double, ct.c_double, PP], ct.c_int),
-    }
-    for name, (args, result) in signatures.items():
-        f = getattr(lib, name)
-        f.argtypes, f.restype = args, result
+    lib.cg_galaxies.argtypes = [P, ct.c_size_t, DP, DP]
+    lib.cg_galaxies.restype = ct.c_int
 
 def doubles(values):
     values = tuple(values)
@@ -61,68 +43,45 @@ class TableData:
     values: tuple  # flattened [iy*nx+ix], never transposed
 
 class Table:
-    """Python-owned NumPy storage, borrowed by a small C evaluation descriptor.
-
-    Construction consumes a temporary C-owned handle; only the unchanged
-    legacy generation scratch is C-owned. Persistent arrays belong to NumPy.
-    """
-    def __init__(self, lib, handle, metadata):
-        self._lib, self._handle = lib, P()
+    """Read-only Python/NumPy tables; serial interpolation stays in Python."""
+    def __init__(self, data, metadata):
         self.metadata = dict(metadata)
         self._lock = threading.RLock()
-        try:
-            nx, ny = ct.c_size_t(), ct.c_size_t()
-            check(lib, lib.cg_table_shape(handle, ct.byref(nx), ct.byref(ny)))
-            self._x = np.empty(nx.value, dtype=np.float64)
-            self._y = np.empty(ny.value, dtype=np.float64)
-            self._values = np.empty((ny.value, nx.value), dtype=np.float64)
-            check(lib, lib.cg_table_copy(handle, self._pointer(self._x),
-                  self._pointer(self._y), self._pointer(self._values)))
-            self._borrow()
-        finally:
-            lib.cg_table_destroy(handle)
-
-    @staticmethod
-    def _pointer(values):
-        return values.ctypes.data_as(DP)
-
-    def _borrow(self):
-        # Strong references on self outlive the C descriptor. Read-only
-        # arrays prevent accidental edits while a C call has released the GIL.
-        for values in (self._x, self._y, self._values):
-            values.flags.writeable = False
-        check(self._lib, self._lib.cg_table_borrow(
-            self._x.size, self._y.size, self._pointer(self._x),
-            self._pointer(self._y), self._pointer(self._values),
-            ct.byref(self._handle)))
+        self._closed = False
+        self._x = np.array(data.x, dtype=np.float64, copy=True)
+        self._y = np.array(data.y, dtype=np.float64, copy=True)
+        if self._x.ndim != 1 or self._y.ndim != 1:
+            raise ValueError("Table axes must be one-dimensional")
+        nx, ny = self._x.size, self._y.size
+        if not 2 <= nx <= 4096 or not 1 <= ny <= 4096 or nx*ny > 4194304:
+            raise ValueError("Invalid table shape")
+        for a in (self._x,self._y):
+            if not np.isfinite(a).all() or (a<=0).any() or (np.diff(a)<=0).any():
+                raise ValueError("Table axes must be finite, positive and increasing")
+        values = np.asarray(data.values, dtype=np.float64)
+        if values.size != nx*ny or not np.isfinite(values).all() or (values<0).any():
+            raise ValueError("Invalid table values")
+        self._values = np.empty((ny,nx),dtype=np.float64)
+        self._values[:] = values.reshape(ny,nx)
+        for a in (self._x,self._y,self._values):
+            a.flags.writeable = False
 
     @classmethod
     def from_data(cls, lib, data, metadata):
-        """Load Python cache data directly into NumPy, without C-owned copies."""
-        table = cls.__new__(cls)
-        table._lib, table._handle = lib, P()
-        table._lock = threading.RLock()
-        table.metadata = dict(metadata)
-        table._x = np.array(data.x, dtype=np.float64, order="C", copy=True)
-        table._y = np.array(data.y, dtype=np.float64, order="C", copy=True)
-        if table._x.ndim != 1 or table._y.ndim != 1:
-            raise ValueError("Table axes must be one-dimensional")
-        values = np.asarray(data.values, dtype=np.float64)
-        if values.size != table._x.size * table._y.size:
-            raise ValueError("Table values must contain nx * ny entries")
-        table._values = np.empty((table._y.size, table._x.size), dtype=np.float64)
-        table._values[:] = values.reshape(table._values.shape)
-        table._borrow()
-        return table
+        # Retained Python compatibility; no C handle is created.
+        return cls(data,metadata)
 
-    def _view(self, values):
+    def _ensure_open(self):
+        if self._closed:
+            raise RuntimeError("Table is closed")
+
+    def _view(self, a):
         with self._lock:
             self._ensure_open()
-            return values.view()
+            return a.view()
 
     @property
     def x(self):
-        """Read-only NumPy axis in the units recorded in metadata."""
         return self._view(self._x)
 
     @property
@@ -131,45 +90,47 @@ class Table:
 
     @property
     def values(self):
-        """Read-only C-contiguous NumPy array shaped (ny, nx)."""
         return self._view(self._values)
-
-    def _ensure_open(self):
-        if not self._handle.value:
-            raise RuntimeError("Table is closed")
 
     def snapshot(self):
         with self._lock:
             self._ensure_open()
-            return TableData(tuple(self._x), tuple(self._y), tuple(self._values.ravel()))
+            return TableData(tuple(self._x),tuple(self._y),tuple(self._values.ravel()))
 
     def evaluate(self, x, y=None):
         with self._lock:
             self._ensure_open()
-            xs = doubles(x)
-            ys = None if y is None else doubles(y)
-            if ys is not None and len(xs) != len(ys):
-                raise ValueError("x and y lengths must match")
-            result = doubles([0.] * len(xs))
-            check(self._lib, self._lib.cg_table_eval(self._handle, len(xs), xs, ys, result))
-            return list(result)
+            x=np.asarray(tuple(x),dtype=np.float64)
+            if x.ndim!=1 or not np.isfinite(x).all():
+                raise ValueError("Coordinates must be finite one-dimensional arrays")
+            if len(self._y)==1:
+                return np.interp(x,self._x,self._values[0],left=0,right=0).tolist()
+            if y is None:
+                raise ValueError("A two-dimensional table needs electron coordinates")
+            y=np.asarray(tuple(y),dtype=np.float64)
+            if y.shape!=x.shape or not np.isfinite(y).all():
+                raise ValueError("Coordinate lengths must match and be finite")
+            valid=(x>=self._x[0])&(x<=self._x[-1])&(y>=self._y[0])&(y<=self._y[-1])
+            out=np.zeros_like(x)
+            xv,yv=x[valid],y[valid]
+            ix=np.clip(np.searchsorted(self._x,xv,side="right")-1,0,len(self._x)-2)
+            iy=np.clip(np.searchsorted(self._y,yv,side="right")-1,0,len(self._y)-2)
+            u=(xv-self._x[ix])/(self._x[ix+1]-self._x[ix])
+            v=(yv-self._y[iy])/(self._y[iy+1]-self._y[iy])
+            z=self._values
+            out[valid]=(1-v)*((1-u)*z[iy,ix]+u*z[iy,ix+1])+v*((1-u)*z[iy+1,ix]+u*z[iy+1,ix+1])
+            return out.tolist()
 
     def close(self):
         with self._lock:
-            if self._handle.value:
-                self._lib.cg_table_destroy(self._handle)
-                self._handle = P()
+            self._closed=True
 
     def __enter__(self):
         self._ensure_open()
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self,*args):
         self.close()
-
-    def __del__(self):
-        if getattr(self, "_handle", None):
-            self.close()
 
 def _save_cache(path, metadata, data):
     payload = array("d", data.x + data.y + data.values)
@@ -222,7 +183,7 @@ class Preparation:
 
     Defaults reproduce the production grid sizes; use Grid(8,8) ONLY for smoke
     tests. Cache files are new versioned binary artifacts, never legacy text
-    files. All temperature interpolation/physics arithmetic stays in C.
+    files. Serial generation and evaluation are Python; galaxy batches use C.
     """
     def __init__(self, galaxies, grid=None, threads=1, cache=None, library=None):
         self.galaxies = tuple(galaxies)
@@ -240,16 +201,16 @@ class Preparation:
         self._tables = {}
         self.cache = None if cache is None else Path(cache)
         self.cache_hits = self.cache_misses = 0
-        self._library_hash = hashlib.sha256(Path(self._lib._name).read_bytes()).hexdigest()
+        source = b"".join(Path(__file__).with_name(name).read_bytes() for name in
+                          ("serial.py","constants.py","quadrature.py","preparation.py"))
+        self._library_hash = hashlib.sha256(Path(self._lib._name).read_bytes()+source+
+                          (np.__version__+scipy.__version__).encode()).hexdigest()
         rows = doubles(v for g in self.galaxies for v in g.as_row())
         output = doubles([0.] * (10 * len(self.galaxies)))
         check(self._lib, self._lib.cg_galaxies(self._context._handle, len(self.galaxies), rows, output))
         self.properties = tuple(dict(zip(PROPERTY_NAMES, output[i:i+10]))
                                 for i in range(0, len(output), 10))
-        config, temperatures = doubles([0.] * 8), doubles([0.] * 3)
-        check(self._lib, self._lib.cg_preparation_bounds(rows, len(self.galaxies), config, temperatures))
-        self.config = tuple(config)
-        self.temperature_bounds = tuple(temperatures)
+        self.config, self.temperature_bounds = serial.bounds(self.galaxies,self.properties)
 
     def _ensure_open(self):
         if not self._context._handle.value:
@@ -258,28 +219,13 @@ class Preparation:
     def temperature_grid(self, field):
         with self._lock:
             self._ensure_open()
-            if field == "CMB":
-                args = (4, 0., self.temperature_bounds[0], .5)
-            elif field == "FIR":
-                args = (5, self.temperature_bounds[1], self.temperature_bounds[2], 5.)
-            else:
-                raise ValueError("Temperature grid is only for CMB or FIR")
-            count = ct.c_size_t()
-            check(self._lib, self._lib.cg_temperature_grid(*args, 0, None, ct.byref(count)))
-            values = doubles([0.] * count.value)
-            check(self._lib, self._lib.cg_temperature_grid(*args, count.value, values, ct.byref(count)))
-            return tuple(values)
+            return serial.temperature_grid(field,self.temperature_bounds)
 
-    def radiation(self, index, energies):
+    def radiation(self,index,energies):
         with self._lock:
             self._ensure_open()
-            g = self.galaxies[index]
-            es = doubles(energies)
-            fields, urad = doubles([0.] * (len(es) * 7)), doubles([0.] * 8)
-            check(self._lib, self._lib.cg_radiation(doubles(g.as_row()), len(es), es,
-                  doubles(self.config[4:6]), fields, urad))
-            return {"fields_cm3_gev": {name: tuple(fields[j::7])
-                    for j, name in enumerate(RADIATION_NAMES)}, "urad_ub_ev_cm3": tuple(urad)}
+            fields,urad=serial.radiation(self.galaxies[index],self.properties[index],energies,self.config)
+            return {"fields_cm3_gev":dict(zip(RADIATION_NAMES,fields)),"urad_ub_ev_cm3":urad}
 
     def table(self, kind, field="3000", temperature=0.):
         with self._lock:
@@ -290,7 +236,7 @@ class Preparation:
                 field, temperature = "3000", 0.
             if field not in ("CMB", "FIR"):
                 temperature = 0.
-            meta = {"schema": 1, "library_sha256": self._library_hash,
+            meta = {"schema": 2, "implementation_sha256": self._library_hash,
                     "kind": kind, "field": field, "temperature_k": float(temperature),
                     "nx": self.grid.nx, "ny": self.grid.ny, "config": list(self.config),
                     "units": "dimensionless" if kind == "sy" else "mb/GeV" if kind == "bs" else "1/(s GeV)",
@@ -300,16 +246,14 @@ class Preparation:
             key = hashlib.sha256(encoded).hexdigest()
             if key in self._tables:
                 return self._tables[key]
-            handle = P()
             path = None if self.cache is None else self.cache / (key + ".cgt")
             if path is not None and path.exists():
                 data = _read_cache(path, meta)
                 table = Table.from_data(self._lib, data, meta)
                 self.cache_hits += 1
             else:
-                check(self._lib, self._lib.cg_table_create(KINDS.index(kind), FIELDS.index(field),
-                      temperature, self.grid.nx, self.grid.ny, doubles(self.config), ct.byref(handle)))
-                table = Table(self._lib, handle, meta)
+                x,y,z=serial.generate(kind,field,temperature,self.grid.nx,self.grid.ny,self.config)
+                table=Table(TableData(x,y,z),meta)
                 self.cache_misses += 1
             try:
                 if path is not None and not path.exists():
@@ -334,7 +278,7 @@ class Preparation:
             return len(self._tables)
 
     def combined_ic(self, index, kind="emission"):
-        """Independent Python-owned arrays with a borrowed C evaluation handle."""
+        """Independent Python-combined table; legacy reversed weights are retained."""
         with self._lock:
             self._ensure_open()
             if kind not in ("emission", "gamma"):
@@ -342,7 +286,7 @@ class Preparation:
             galaxy = self.galaxies[index]
             planes = [self.table(kind, field) for field in FIELDS[:4]]
             fractions = []
-            # Native C computes both CMB temperature and dust temperature.
+            # C computed dust temperature in its galaxy loop; CMB setup is serial Python.
             target_cmb = self._single_cmb_temperature(galaxy)
             for field, target in (("CMB", target_cmb),
                                   ("FIR", self.properties[index]["dust_temperature_k"])):
@@ -354,20 +298,19 @@ class Preparation:
                 position = j + (target-grid[j])/(grid[j+1]-grid[j])
                 fractions.append(position-j)
                 planes.extend([self.table(kind, field, grid[j]), self.table(kind, field, grid[j+1])])
-            handle = P()
-            with ExitStack() as locks:
-                for table in planes:
-                    locks.enter_context(table._lock)
-                    table._ensure_open()
-                check(self._lib, self._lib.cg_combine_ic(doubles(galaxy.as_row()),
-                      (P * 8)(*(t._handle for t in planes)), *fractions, ct.byref(handle)))
-            return Table(self._lib, handle, {"kind": kind, "combination": "legacy-reversed-temperature-weights",
-                         "units": "1/(s GeV)", "x_axis": "DeltaE_GeV" if kind == "gamma" else "photon_GeV"})
+            for table in planes:
+                table._ensure_open()
+            d=serial.dilution(galaxy,self.properties[index]["dust_temperature_k"])
+            fc,ff=fractions
+            z=[table.values for table in planes]
+            result=(z[4]*fc+z[5]*(1-fc))+d[4]*(z[6]*ff+z[7]*(1-ff))
+            result=result+d[0]*z[0]+d[1]*z[1]+d[2]*z[2]+d[3]*z[3]
+            return Table(TableData(planes[0].x,planes[0].y,result),
+                         {"kind":kind,"combination":"legacy-reversed-temperature-weights",
+                          "units":"1/(s GeV)","x_axis":"DeltaE_GeV" if kind=="gamma" else "photon_GeV"})
 
-    def _single_cmb_temperature(self, galaxy):
-        config, temps = doubles([0.] * 8), doubles([0.] * 3)
-        check(self._lib, self._lib.cg_preparation_bounds(doubles(galaxy.as_row()), 1, config, temps))
-        return temps[0]
+    def _single_cmb_temperature(self,galaxy):
+        return constants.TCMB*(1+galaxy.redshift)
 
     def close(self):
         with self._lock:

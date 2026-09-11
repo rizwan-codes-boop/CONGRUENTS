@@ -24,14 +24,12 @@ def load_library(path=None):
         "cg_openmp_enabled": (ct.c_int, []),
         "cg_context_create": (ct.c_int, [ct.c_int, ct.POINTER(ct.c_void_p)]),
         "cg_context_destroy": (None, [ct.c_void_p]),
-        "cg_ionisation": (ct.c_int, [ct.c_void_p, ct.c_size_t,
-                                    DoublePointer, ct.c_double, DoublePointer]),
     }
     for name, (result, args) in signatures.items():
         function = getattr(lib, name)
         function.restype = result
         function.argtypes = args
-    if lib.cg_abi_version() != 1:
+    if lib.cg_abi_version() != 2:
         raise RuntimeError("Unsupported CONGRUENTS C ABI")
     return lib
 
@@ -43,4 +41,3 @@ def check(lib, status):
         if status == 2:
             raise MemoryError(message)
         raise RuntimeError(message)
-

@@ -5,7 +5,7 @@ SHELL := /bin/sh
 DEPENDENCY_ROOT ?= .
 GCC_PACKAGE := $(firstword $(wildcard $(DEPENDENCY_ROOT)/.conda-pkgs/gcc_impl_osx-arm64-*/bin/arm64-apple-darwin*-gcc))
 GCC_LIBDIR := $(firstword $(wildcard $(DEPENDENCY_ROOT)/.conda-pkgs/libgcc-devel_osx-arm64-*/lib/gcc/arm64-apple-darwin*/*))
-CC := $(GCC_PACKAGE)
+CC := $(if $(GCC_PACKAGE),$(GCC_PACKAGE),gcc)
 
 CPPFLAGS := -I. -ICR_spectra -I$(DEPENDENCY_ROOT)/.deps/include -I$(DEPENDENCY_ROOT)/vendor/cubature -DCONGRUENTS_USE_SYSTEM_OPENMP
 CFLAGS := -std=gnu11 -O3 -fopenmp -Wall -Wextra \
@@ -51,7 +51,7 @@ run: all
 clean:
 	rm -rf $(BIN_DIR)
 
-# Week-1 pilot library. Existing production executables remain unchanged.
+# Python/C ABI 2 library. Existing production executables remain unchanged.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 LIB_SUFFIX := dylib
@@ -62,14 +62,23 @@ SHARED_FLAGS := -shared
 endif
 PYTHON ?= python3
 SHARED_LIBRARY := build/libcongruents.$(LIB_SUFFIX)
+comma := ,
+NATIVE_LDFLAGS := $(if $(GCC_LIBDIR),-L$(GCC_LIBDIR)) $(if $(GCC_PACKAGE),-L$(DEPENDENCY_ROOT)/.deps/lib -Wl$(comma)-rpath$(comma)$(abspath $(DEPENDENCY_ROOT))/.deps/lib)
 .PHONY: shared test-week1
-shared: compiler-check $(SHARED_LIBRARY)
+shared: $(SHARED_LIBRARY)
 
 build:
 	mkdir -p $@
 
 $(SHARED_LIBRARY): csrc/congruents.c csrc/preparation.c csrc/internal.h csrc/include/congruents.h $(MODEL_HEADERS) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -fvisibility=hidden $(SHARED_FLAGS) csrc/congruents.c csrc/preparation.c $(LDLIBS) -o $@
+	$(CC) -Icsrc/include $(CFLAGS) -fPIC -fvisibility=hidden $(SHARED_FLAGS) csrc/congruents.c csrc/preparation.c $(NATIVE_LDFLAGS) -lm -o $@
+
+.PHONY: test-portable test
+test-portable: shared
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_serial.py -v
+
+test: shared build/direct_ionisation build/direct_preparation
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
 
 build/direct_ionisation: tests/direct_ionisation.c CR_spectra/ionisation.h physical_constants.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@

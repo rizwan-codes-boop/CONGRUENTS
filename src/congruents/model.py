@@ -2,14 +2,15 @@
 import ctypes as ct
 import threading
 from ._bindings import load_library, check
+from .serial import ionisation
 
 class Context:
     """C-owned configuration; use as a context manager.
 
     ionisation_loss takes an iterable of TOTAL electron energies in GeV
     and a hydrogen number density in cm^-3. Returns a list in GeV/s.
-    Inputs are copied to contiguous doubles; C retains no Python pointers.
-    No physics constants or equations are reimplemented in Python.
+    The context retains only the native thread-count configuration.
+    The standalone diagnostic is serial Python; only galaxy loops use OpenMP.
     """
     def __init__(self, threads=1, library=None):
         if isinstance(threads, bool) or not isinstance(threads, int):
@@ -34,12 +35,7 @@ class Context:
             if not self._handle.value:
                 raise RuntimeError("Context is closed")
             values = tuple(float(value) for value in energies_gev)
-            buffer_type = ct.c_double * len(values)
-            energies = buffer_type(*values)
-            output = buffer_type()
-            check(self._lib, self._lib.cg_ionisation(
-                self._handle, len(values), energies, float(density_cm3), output))
-            return list(output)
+            return ionisation(values, float(density_cm3))
 
     def close(self):
         with self._lock:
@@ -58,4 +54,3 @@ class Context:
     def __del__(self):
         if getattr(self, "_handle", None) and hasattr(self, "_lib"):
             self.close()
-
