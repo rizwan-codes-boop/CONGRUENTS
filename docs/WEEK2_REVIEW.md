@@ -1,5 +1,8 @@
 # Week 2: inputs, galaxy properties and tables
 
+Historical review: the C serial backend described here is superseded by
+[the Python serial revision](PYTHON_SERIAL_REVIEW.md).
+
 Implementation date: 2026-09-06.
 Branch: feature/model-inputs-and-tables.
 Week 1 was merged and pushed to main as 4ce7c98 before starting this work.
