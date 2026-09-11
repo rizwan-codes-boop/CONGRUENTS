@@ -1,5 +1,9 @@
 # Week 1: C-library boundary and Python connection
 
+Historical review: the pilot C ionisation/OpenMP energy batch is superseded by
+[the Python serial revision](PYTHON_SERIAL_REVIEW.md). See that review for
+the current version, ABI and test commands.
+
 Implementation date: 2026-09-06. Branch: feature/c-library-api.
 
 ## Scope

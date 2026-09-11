@@ -1,0 +1,20 @@
+name: Python-C interface checks
+on: [push, pull_request]
+jobs:
+  portable:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e '.[units]'
+      - if: runner.os == 'macOS'
+        run: |
+          brew install gcc@14
+          make shared test-portable CC="$(brew --prefix gcc@14)/bin/gcc-14" PYTHON=python
+      - if: runner.os == 'Linux'
+        run: make shared test-portable CC=gcc PYTHON=python

@@ -1,80 +1,71 @@
-# CONGRuENTS — reconstructed C production tree
+# CONGRUENTS — Python/C development and preserved C reference
 
-## Python–C development (Week 1)
+The interface uses Python for serial preparation and C/OpenMP for galaxy batches,
+following the supervisor-confirmed [requirements](docs/PROJECT_REQUIREMENTS.md).
+The existing Week-1/Week-2 features have been revised; the full spectrum solver
+has **not yet** been exposed through Python.
 
-The pilot shared library and Python bindings are documented in
-[docs/WEEK1_REVIEW.md](docs/WEEK1_REVIEW.md). From this development checkout,
-with the existing sibling dependency installation:
+See [the current architecture and validation review](docs/PYTHON_SERIAL_REVIEW.md).
+The older Week-1/Week-2 reviews describe historical implementations.
 
-```sh
-make DEPENDENCY_ROOT=../CONGRUENTS-c check test-week1
-PYTHONPATH=src python3 examples/week1.py
-```
+## Interface quick start
 
-This exposes the unchanged C ionisation function, not yet the complete galaxy
-solver. Physics remains in C, including the pilot's OpenMP batch loop.
-
-CONGRuENTS produces cosmic-ray, neutrino, gamma-ray, and radio non-thermal
-spectra for galaxy catalogues. This folder preserves the end-to-end model in C
-and restores the files and build dependencies absent from the available source
-snapshot.
-
-## Quick start
-
-From this directory:
+In the existing astro environment, using the sibling compiler dependencies:
 
 ```sh
-make check
-make run-precompute
-make run
+python -m pip install -e '.[units]'
+make DEPENDENCY_ROOT=../CONGRUENTS-c test PYTHON=python
+PYTHONPATH=src python examples/week1.py
+PYTHONPATH=src python examples/week2.py
 ```
 
-`make check` compiles the two production executables and performs lightweight
-command-line smoke tests. `make run-precompute` generates the expensive inverse
-Compton, bremsstrahlung, and synchrotron lookup tables in `data/`. `make run`
-reads those tables and writes the complete result set to `output/`.
+This builds library version 0.2.0, ABI 2. Rebuild it when upgrading from Week 2.
+The small-grid example generates preparation tables and diagnostics, not final
+galaxy spectra. Run it twice to see cold/warm cache behaviour.
 
-Set the C parallelism with, for example:
+Python owns ionisation diagnostics, grids, radiation fields, IC/BS/SY table
+generation, interpolation, combination, storage and caching. The native library
+contains the galaxy-property OpenMP loop, its directly used helpers, and minimal
+context/ABI plumbing. There are no Python callbacks inside native workers.
+
+## Building on other systems
+
+The interface library requires GNU GCC with OpenMP, but **not** GSL/cubature:
 
 ```sh
-OMP_NUM_THREADS=8 make run-precompute
-OMP_NUM_THREADS=8 make run
+make shared test-portable CC=gcc PYTHON=python
 ```
 
-## Executables
+On macOS with Homebrew GCC, pass the versioned compiler path, for example
+`CC="$(brew --prefix gcc@14)/bin/gcc-14"` after installing that formula.
+On HPC, load the site's GCC/Python modules and pass its compiler path. Restrict
+native threads to allocated CPUs. macOS/Linux CI is configured for the portable
+subset; successful Linux/HPC execution has not yet been established locally.
 
-- `bin/create_interp_objects input/cat_nt.txt data` builds reusable numerical
-  interpolation tables.
-- `bin/spectra input/cat_nt.txt data output` runs the full production model.
+The full regression suite also needs the preserved C reference executables and
+their GSL/cubature dependencies. The portable subset is not a substitute for it.
 
-Both are compiled with GNU C and OpenMP. No model component has been converted
-to Python.
+## Preserved C production workflow
 
-## Directory layout
+The files below remain the CONGRUENTS-i scientific reference. Their existing
+standalone workflow is separate from the unfinished Python solver interface:
 
-- `CR_spectra/` — inverse Compton, synchrotron, bremsstrahlung, ionisation,
-  diffusion, and radiation-field physics.
-- `input/` — recovered galaxy catalogue and EBL optical-depth tables.
-- `data/` — generated interpolation tables; initially empty.
-- `output/` — generated production spectra; initially empty.
-- `vendor/` and `.deps/` — recovered source dependencies and local libraries.
-- `RECONSTRUCTION.md` — missing-file provenance, assumptions, known legacy
-  issues, and the staged validation plan.
+```sh
+make DEPENDENCY_ROOT=../CONGRUENTS-c check
+make DEPENDENCY_ROOT=../CONGRUENTS-c run-precompute
+make DEPENDENCY_ROOT=../CONGRUENTS-c run
+```
 
-## Dependency reconstruction
+The first command compiles and smoke-checks the C executables.
+Precomputation writes legacy tables in `data/`; spectra writes into `output/`.
+OpenMP parallelises galaxy processing. Lookup-table generation is serial.
 
-The original repository named GSL and cubature but supplied neither a build
-system nor its five private headers. This copy includes locally built GSL 2.8,
-vendored cubature, and a project-local GNU compiler/OpenMP runtime. GNU C is
-required because the original implementation defines numerical callbacks as
-nested functions, a GNU extension rejected by Apple Clang.
+- `CR_spectra/`, root C sources/headers: preserved reference physics/drivers.
+- `src/congruents/`: Python interface and serial calculations.
+- `csrc/`: narrow native galaxy-batch interface.
+- `input/`: reference catalogue and EBL data.
+- `tests/`: independent C comparisons, fixtures and portable checks.
+- `RECONSTRUCTION.md`: missing-file provenance and reconstruction assumptions.
 
-The project-local compiler packages are intentionally kept out of the physics
-source. The Makefile discovers them beneath `.conda-pkgs/`.
-
-## Scientific status
-
-Compilation is only the first reproducibility gate. The restored constants,
-cosmology, and spline wrappers are documented assumptions until numerical
-outputs are compared against the original paper-production files. See
-`RECONSTRUCTION.md` before interpreting results or changing formulas.
+Generated caches, shared libraries and outputs are not committed. The interface
+does not integrate CANDELS or change the reference scientific parameters.

@@ -1,0 +1,20 @@
+"""Native-unit constants frozen to CONGRUENTS-i/physical_constants.h.
+Astropy converts user inputs; it does not silently replace these baseline values.
+"""
+C = 2.99792458e10
+H = 4.135667696e-24
+H_ERG = 6.62607015e-27
+KB = 8.617333262e-14
+ME = 5.10998950e-4
+ME_G = 9.1093837015e-28
+SIGMA_MB = 6.6524587321e2
+MB_CM2 = 1.e-27
+ALPHA = 7.2973525693e-3
+E_ESU = 4.80320471257e-10
+ERG_GEV = 6.241509074e2
+GEV_ERG = 1.602176634e-3
+PC = 3.0856775814913673e18
+LSUN = 3.828e33 * 6.241509074e2
+TCMB = 2.7255
+ARAD = 7.5657e-15 * 6.241509074e2
+
