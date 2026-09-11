@@ -8,6 +8,7 @@ import sys
 import threading
 import numpy as np
 from . import constants, serial
+from .solver_inputs import transport_inputs, free_free_inputs
 from .preparation import Preparation, PROPERTY_NAMES, Table, TableData
 
 _LOCK = threading.RLock()
@@ -38,7 +39,7 @@ def _load(path=None):
     lib = ct.CDLL(str(path.resolve()))
     lib.cg_solver_abi.argtypes = []
     lib.cg_solver_abi.restype = ct.c_uint
-    if lib.cg_solver_abi() != 1:
+    if lib.cg_solver_abi() != 2:
         raise RuntimeError("Unsupported solver ABI")
     lib.cg_transport_batch.argtypes = [ct.c_int, ct.c_size_t, ct.c_size_t,
                                       _DP, _DP, _DP, _DP, _DP, _IP]
@@ -136,14 +137,19 @@ def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_preci
         photon = serial.log_grid(np_, 1e-16, 1e8)
         rows = np.array([g.as_row() for g in preparation.galaxies], dtype=np.float64)
         properties = np.array([[p[k] for k in PROPERTY_NAMES] for p in preparation.properties])
-        transport = np.zeros((n, 7, ne), dtype=np.float64)
+        transport, cp = transport_inputs(rows, properties, kinetic)
+        free_free = free_free_inputs(rows, properties, photon)
+        density = np.ascontiguousarray(properties[:,1])
+        fcal = np.ascontiguousarray(transport[:,0,:])
+        secondary = np.zeros((n,ne))
         statuses = np.zeros(n, dtype=np.int32)
-        code = lib.cg_transport_batch(threads, n, ne, _pointer(kinetic), _pointer(electron),
-                _pointer(rows), _pointer(properties), _pointer(transport), statuses.ctypes.data_as(_IP))
+        code = lib.cg_transport_batch(threads, n, ne, _pointer(kinetic), _pointer(density),
+                _pointer(cp), _pointer(fcal), _pointer(secondary), statuses.ctypes.data_as(_IP))
         _check(code, statuses)
+        transport[:,5,:] = secondary
         props = np.ascontiguousarray(np.column_stack(
             (properties[:,0], properties[:,1], properties[:,2], properties[:,9],
-             properties[:,6], rows[:,2], rows[:,3])))
+             properties[:,6], rows[:,2], rows[:,3], cp)))
         diffusion = np.ascontiguousarray(transport[:,2:4,:])
         injection = np.ascontiguousarray(transport[:,4:6,:])
         electrons = np.zeros((n,4,ne))
@@ -189,6 +195,8 @@ def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_preci
                 ic,gamma,ct.byref(bs),ct.byref(sy),_pointer(electrons),_pointer(emission),
                 statuses.ctypes.data_as(_IP))
             _check(code,statuses)
+            emission[:,:6,:] *= np.exp(-free_free[:,1,None,:])
+            emission[:,10:12,:] = free_free
         finally:
             for family in combined:
                 for table in family:
@@ -201,7 +209,7 @@ def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_preci
             {name:transport[:,i,:] for i,name in enumerate(TRANSPORT)},
             {name:electrons[:,i,:] for i,name in enumerate(ELECTRONS)},
             {name:emission[:,i,:] for i,name in enumerate(EMISSION)},
-            {"solver_abi": 1, "legacy_table_precision": legacy_table_precision,
+            {"solver_abi": 2, "legacy_table_precision": legacy_table_precision,
              "catalogue": rows.tolist(), "catalogue_columns": ["z","Mstar_Msun","Re_kpc","SFR_Msun_yr"],
              "cosmic_ray_bins": ne, "photon_bins": np_, "solver_cells": grid.cells,
              "table_grid": [preparation.grid.nx, preparation.grid.ny],

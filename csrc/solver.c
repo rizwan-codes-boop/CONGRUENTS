@@ -3,7 +3,6 @@
 #include "solver_runtime.h"
 #include <stdatomic.h>
 #include <omp.h>
-#include <gsl/gsl_sf_hyperg.h>
 #define hcubature_v cg_cubature
 #include "../spectra_funcs.h"
 #include "../CR_spectra/CR_funcs.h"
@@ -21,7 +20,7 @@ double q_p_inject=2.2, q_e_inject=2.2;
 double T_CR_lims__GeV[2]={1e-3,1e8};
 double E_CRe_lims__GeV[2]={1e-3+5.10998950e-4,1e8+5.10998950e-4};
 static atomic_flag cg_solver_busy=ATOMIC_FLAG_INIT;
-unsigned cg_solver_abi(void) { return 1; }
+unsigned cg_solver_abi(void) { return 2; }
 
 static int cg_axis(size_t n,const double *v) {
     if(!v || n<2 || n>4096) return 0;
@@ -42,54 +41,20 @@ static gsl_spline_object_2D cg_bind_table(const cg_table_input *t) {
     return gsl_so2D(t->nx,t->ny,t->x,t->y,t->values);
 }
 
-static void cg_transport_galaxy(size_t index,size_t ne,const double *t,const double *e,
-    const double *row,const double *p,double *out) {
-    const double h=p[0],nh=p[1],sigma=p[3],area=p[4],gas=p[5];
-    const double sfr=row[3],number=nh*1.4/1.17;
-    const double uLA=sigma/sqrt(2.),vAi=1000.*(uLA/10.)/(sqrt(1e-4/1e-4)*2.);
-    const double LA=h/pow(2.,3),D0=vAi*LA*1e5*pc__cm;
-    const double norm=C_norm_E(q_p_inject,m_p__GeV,1e8);
-    const double tloss=1./(1./(1./(number*40e-27*.5*c__cmsm1))+1./(pow(h*pc__cm,2)/D0));
-    const double C=sfr*1.321680e-2*.1*1e51*erg__GeV/yr__s*tloss/
-                   (norm*2.*area*2.*h*pow(pc__cm,3));
-    const double Ce=.2*sfr*1.321680e-2*.1*1e51*erg__GeV/
-                    (yr__s*C_norm_E(q_e_inject,m_e__GeV,1e5));
-    double *fcal=out,*dp=out+ne,*dd=out+2*ne,*dh=out+3*ne,*q1=out+4*ne,*q2=out+5*ne;
-    for(size_t j=0;j<ne;j++) {
-        double vs=fmin(vAi*(1.+2.3e-3*pow(sqrt(pow(t[j],2)+2.*m_p__GeV*t[j]),q_p_inject-1.)*
-                   pow(nh/1e3,1.5)*(1e-4/1e-4)*2./(uLA/10.*C/2e-7)),c__cmsm1/1e5);
-        dp[j]=vs*LA*1e5*pc__cm;
-        double tau=9.9*gas/1e3*h/1e2*1e27/dp[j];
-        double gamma=41.2*h/1e2*vs/1e3*1e27/dp[j];
-        fcal[j]=1.-1./(gsl_sf_hyperg_0F1(.25/(.25+1.),tau/pow(.25+1.,2))+
-                     tau/gamma*gsl_sf_hyperg_0F1((.25+2.)/(.25+1.),tau/pow(.25+1.,2)));
-        if(index==10) fcal[j]*=.1;
-    }
-    for(size_t j=0;j<ne;j++) {
-        double momentum=pow(sqrt(pow(t[j],2)+2.*m_e__GeV*t[j]),q_p_inject-1.);
-        double vs=fmin(vAi*(1.+2.3e-3*momentum*pow(nh/1e3,1.5)*
-                       (1e-4/1e-4)*2./(uLA/10.*C/2e-7)),c__cmsm1/1e5);
-        dd[j]=vs*LA*1e5*pc__cm;
-        dh[j]=fmin(vAi*(1.+2.3e-3*momentum*pow(nh/1e3/1e3,1.5)*(1./1e-4)*
-              2./(uLA/10.*((1.-fcal[0])*C)/2e-7)),c__cmsm1/1e5)*LA*1e5*pc__cm;
-        q1[j]=J(t[j],Ce,q_e_inject,m_e__GeV,1e5);
-    }
+/* Only the secondary-injection quadrature remains in this worker.
+ * Calorimetry, diffusion, normalizations and primary/proton arrays are Python-owned. */
+static void cg_secondary_galaxy(size_t ne,const double *t,double nh,double Cp,
+    const double *fcal,double *out) {
     gsl_spline_object_1D fc=gsl_so1D(ne,t,fcal);
-    const double collision=1./(number*40e-27*.5*c__cmsm1);
-    const double Cp=sfr*1.321680e-2*.1*1e51*erg__GeV/yr__s*collision/norm;
-    for(size_t j=0;j<ne;j++) {
-        q2[j]=q_e(t[j],nh,Cp,1e8,fc);
-        out[6*ne+j]=J(t[j],Cp,q_p_inject,m_p__GeV,1e8)*fcal[j];
-    }
-    if(!cg_values(7*ne,out,0)) cg_fail(CG_NUMERIC);
+    for(size_t j=0;j<ne;j++) out[j]=q_e(t[j],nh,Cp,1e8,fc);
+    if(!cg_values(ne,out,0)) cg_fail(CG_NUMERIC);
 }
 
-int cg_transport_batch(int threads,size_t n,size_t ne,const double *t,const double *e,
-    const double *rows,const double *props,double *out,int *statuses) {
-    if(threads<1 || !n || n>100000 || !cg_axis(ne,t) || !cg_axis(ne,e) ||
-       !rows || !cg_values(10*n,props,1) || !out || !statuses) return CG_INVALID;
-    for(size_t i=0;i<n;i++)
-        if(!isfinite(rows[4*i]) || rows[4*i]<0 || !cg_values(3,rows+4*i+1,1)) return CG_INVALID;
+int cg_transport_batch(int threads,size_t n,size_t ne,const double *t,const double *nh,
+    const double *cp,const double *fcal,double *out,int *statuses) {
+    if(threads<1 || !n || n>100000 || !cg_axis(ne,t) ||
+       !cg_values(n,nh,1) || !cg_values(n,cp,1) ||
+       !cg_values(n*ne,fcal,0) || !out || !statuses) return CG_INVALID;
     if(atomic_flag_test_and_set(&cg_solver_busy)) return CG_INVALID;
     gsl_error_handler_t *previous=gsl_set_error_handler_off();
     const size_t team=(size_t)threads<n?(size_t)threads:n;
@@ -100,7 +65,7 @@ int cg_transport_batch(int threads,size_t n,size_t ne,const double *t,const doub
         cg_worker *w=&workers[omp_get_thread_num()];
         w->count=0;w->status=0;w->phase="setup";
         cg_active=w;
-        if(!setjmp(w->escape)) cg_transport_galaxy(i,ne,t,e,rows+4*i,props+10*i,out+7*ne*i);
+        if(!setjmp(w->escape)) cg_secondary_galaxy(ne,t,nh[i],cp[i],fcal+ne*i,out+ne*i);
         statuses[i]=w->status;
         cg_cleanup(w);cg_active=NULL;
     }
@@ -118,8 +83,7 @@ static void cg_solve_galaxy(size_t ne,size_t np,size_t ns,const double *e,const 
     gsl_spline_object_1D q1=gsl_so1D(ne,e,inj), q2=gsl_so1D(ne,e,inj+ne);
     gsl_spline_object_1D ss[4];
     gsl_spline_object_1D fc=gsl_so1D(ne,kinetic,fcal);
-    const double collision=1./(p[1]*1.4/1.17*40e-27*.5*c__cmsm1);
-    const double Cp=p[6]*1.321680e-2*.1*1e51*erg__GeV/yr__s*collision/C_norm_E(q_p_inject,m_p__GeV,1e8);
+    const double Cp=p[7];
     double bounds[2]={E_CRe_lims__GeV[0],E_CRe_lims__GeV[1]};
     cg_active->phase="disc steady state";
     CRe_steadystate_solve(1,bounds,(int)ns,p[1],p[2],p[0],1,&transition,brems,dd,q1,q2,&ss[0],&ss[1]);
@@ -134,19 +98,20 @@ static void cg_solve_galaxy(size_t ne,size_t np,size_t ns,const double *e,const 
     for(size_t k=0;k<4;k++) for(size_t j=0;j<ne;j++) electrons[k*ne+j]=gsl_so1D_eval(ss[k],e[j]);
     cg_active->phase="emission";
     for(size_t j=0;j<np;j++) {
-        double energy=ph[j],tau=tau_FF_MK(energy,p[4],1e4),absorb=exp(-tau);
-        emission[0*np+j]=eps_IC_3(energy,emit,ss[0])*absorb;
-        emission[1*np+j]=eps_IC_3(energy,emit,ss[1])*absorb;
-        emission[2*np+j]=eps_BS_3(energy,p[1],brems,ss[0])*absorb;
-        emission[3*np+j]=eps_BS_3(energy,p[1],brems,ss[1])*absorb;
-        emission[4*np+j]=eps_SY_4(energy,p[2],sync,ss[0])*absorb;
-        emission[5*np+j]=eps_SY_4(energy,p[2],sync,ss[1])*absorb;
+        double energy=ph[j];
+        emission[0*np+j]=eps_IC_3(energy,emit,ss[0]);
+        emission[1*np+j]=eps_IC_3(energy,emit,ss[1]);
+        emission[2*np+j]=eps_BS_3(energy,p[1],brems,ss[0]);
+        emission[3*np+j]=eps_BS_3(energy,p[1],brems,ss[1]);
+        emission[4*np+j]=eps_SY_4(energy,p[2],sync,ss[0]);
+        emission[5*np+j]=eps_SY_4(energy,p[2],sync,ss[1]);
         emission[6*np+j]=eps_IC_3(energy,emit,ss[2]);
         emission[7*np+j]=eps_IC_3(energy,emit,ss[3]);
         emission[8*np+j]=eps_SY_4(energy,p[3],sync,ss[2]);
         emission[9*np+j]=eps_SY_4(energy,p[3],sync,ss[3]);
-        emission[10*np+j]=eps_FF(energy,p[5],1e4,tau);
-        emission[11*np+j]=tau;
+        /* Python supplies free-free and applies disc attenuation after return. */
+        emission[10*np+j]=0.;
+        emission[11*np+j]=0.;
         emission[12*np+j]=eps_pi(energy,p[1],Cp,1e8,fc);
         emission[13*np+j]=eps_pi_fcal1(energy,p[1],Cp,1e8,fc);
         emission[14*np+j]=q_nu(energy,p[1],Cp,1e8,fc);
@@ -160,7 +125,7 @@ int cg_solver_batch(int threads,size_t n,size_t ne,size_t np,size_t ns,
     const cg_table_input *ic,const cg_table_input *gamma,const cg_table_input *bs,const cg_table_input *sy,
     double *electrons,double *emission,int *statuses) {
     if(threads<1 || !n || n>100000 || ns<4 || ns>500 || !cg_axis(ne,e) || !cg_axis(np,ph) ||
-       !cg_values(7*n,props,1) || !cg_values(2*n*ne,diff,1) || !cg_values(2*n*ne,inj,0) ||
+       !cg_values(8*n,props,1) || !cg_values(2*n*ne,diff,1) || !cg_values(2*n*ne,inj,0) ||
        !cg_axis(ne,kinetic) || !cg_values(n*ne,fcal,0) ||
        !ic || !gamma || !electrons || !emission || !statuses ||
        !cg_table_valid(bs,0) || !cg_table_valid(sy,1)) return CG_INVALID;
@@ -184,7 +149,7 @@ int cg_solver_batch(int threads,size_t n,size_t ne,size_t np,size_t ns,
         w->count=0;w->status=0;w->phase="setup";
         cg_active=w;
         if(!setjmp(w->escape))
-            cg_solve_galaxy(ne,np,ns,e,ph,props+7*i,diff+2*ne*i,inj+2*ne*i,
+            cg_solve_galaxy(ne,np,ns,e,ph,props+8*i,diff+2*ne*i,inj+2*ne*i,
                            kinetic,fcal+ne*i,ic+i,gamma+i,bs,sy,electrons+4*ne*i,emission+15*np*i);
         statuses[i]=w->status;
         cg_cleanup(w);

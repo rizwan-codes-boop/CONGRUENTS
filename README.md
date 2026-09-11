@@ -37,9 +37,15 @@ galaxy spectra. Run it twice to see cold/warm cache behaviour.
 Python owns ionisation diagnostics, grids, radiation fields, IC/BS/SY table
 generation, interpolation, combination, storage and caching. The native library
 contains the galaxy-property OpenMP loop, its directly used helpers, and minimal
-context/ABI plumbing. The optional solver library adds native transport,
-two-zone solves and emission inside galaxy loops. There are no Python callbacks
+context/ABI plumbing. Python also prepares normalization, calorimetry, diffusion,
+primary/proton spectra and free-free arrays. The optional solver library adds
+secondary-injection integrals, two-zone solves and nonthermal emission inside
+galaxy loops. There are no Python callbacks
 inside native workers.
+
+The solver uses ABI 2: rebuild with `make solver` after updating. See
+[`docs/WEEK3_REVIEW.md`](docs/WEEK3_REVIEW.md) for the remaining native helpers
+and the limits of this precomputation boundary.
 
 ## Building on other systems
 

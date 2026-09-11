@@ -9,13 +9,13 @@ yet a validated full-production replacement; the acceptance gates below remain.
 
 | Stage | Responsibility |
 |---|---|
-| Python setup | Catalogue, units, energy axes, serial lookup-table generation, IC combination, contiguous input/output arrays |
-| Native transport galaxy loop | Proton calorimetry/diffusion, disc/halo electron diffusion, primary/secondary injection, steady-state protons |
+| Python setup | Catalogue, units, energy axes, lookup-table generation, IC combination, normalization, calorimetry, diffusion, primary injection, steady-state protons, free-free terms, contiguous arrays |
+| Native secondary-injection galaxy loop | Secondary-electron injection quadrature using Python-prepared density, proton normalization and calorimetry |
 | Native solver galaxy loop | Disc primary/secondary electron solve, escaped injection into halo, halo solve, component emission |
-| Python result handling | Named read-only NumPy arrays, validation/errors, optional compressed NPZ export |
+| Python result handling | Disc free-free attenuation, named read-only NumPy arrays, validation/errors, optional compressed NPZ export |
 
-The native transport mirrors `spectra.c:242` onward and the injection work
-inside `spectra.c:563` onward. The two-zone solver and emission follow
+The Python transport preparation mirrors `spectra.c:242` onward and the
+non-secondary injection work inside `spectra.c:563` onward. The two-zone solver and emission follow
 `spectra.c:629`, `spectra.c:652` and the following photon-energy loop.
 There is no OpenMP over energy bins. The inner energy loops remain sequential
 inside each native galaxy worker.
@@ -28,7 +28,8 @@ No CANDELS input, output calibration or new physical parameters were added.
 ## Python/C boundary review
 
 The existing lightweight library and ABI 2 remain unchanged. The optional
-`libcongruents_solver` library has its own ABI 1 and requires GSL/cubature.
+`libcongruents_solver` library now has its own ABI 2 and requires GSL/cubature.
+Rebuild it after this boundary revision: ABI 1 binaries are rejected.
 Both follow the SLUG ctypes loading pattern with explicit signatures.
 
 Python prepares float64 contiguous arrays and native table descriptors before
@@ -39,12 +40,40 @@ Galaxy-dependent solver matrices, splines and accelerator caches are created
 inside native helpers, never via a callback to Python. This includes the helper
 functions required to execute the loop body, not only the pragma itself.
 
-The native call graph includes normalization/injection functions, radiative and
+The native call graph includes secondary-injection functions, radiative and
 diffusive transition/loss kernels, the energy-conserving steady-state solver,
-and IC/BS/SY/free-free/pion/neutrino emissivities. These functions execute only
+and IC/BS/SY/pion/neutrino emissivities. These functions execute only
 as part of a galaxy worker. Serial lookup-table generators have no exported
 entry point and are removed from the solver library by dead-code stripping.
 Standalone preparation, table generation and combination remain Python.
+
+### Precomputation boundary revision
+
+`solver_inputs.py` now calculates both injection normalization integrals once
+per solve, proton calorimetry, all three diffusion arrays, primary injection,
+the steady-state proton array, and free-free emission/optical depth in Python.
+The secondary-injection worker borrows only kinetic energy, density, proton
+normalization and calorimetry arrays. The solver worker also borrows the
+normalization; it no longer calls `C_norm_E`. Python applies the precomputed
+free-free attenuation to the returned disc components. No fitting or physical
+correction was introduced. Reference constants and precision modes are retained.
+
+These NumPy buffers are Python-owned and stay alive through the synchronous
+native call. C may not free or modify its input buffers. Each native thread
+owns and frees its temporary solver workspace. The current API prepares the
+whole catalogue, not memory-bounded batches; batching is not implemented here.
+
+This is a reduced boundary, not proof that every precomputable helper has been
+removed. Secondary-injection and hadronic-emission integrals could also be
+ported to Python, but would then cease to be galaxy-parallel native work.
+Electron matrix assembly still evaluates kernels at adaptive integration
+points in C. Those points depend on the integration error estimates; replacing
+them with a fixed Python-precomputed grid would be a numerical-method change,
+not merely passing the same values through NumPy. Halo injection depends on
+the solved disc spectrum, and leptonic emission depends on solved populations.
+Removing these native helpers requires porting their calculations or splitting
+the pipeline into further Python/native stages. We do not claim that C only
+contains pragma statements, or that this is the mathematically smallest split.
 
 `csrc/steady_state_native.h` is a reviewed copy of the energy-conserving part
 of the original `CRe_steadystate.h`. Its nested LU helper is replaced with a
@@ -157,7 +186,13 @@ integration; exact zero endpoints are included. One/four-thread results must
 be bitwise equal. Other tests cover export, read-only outputs, raw invalid
 arguments, ABI/symbol isolation, solver-equation fidelity and failure recovery.
 
-The final local suite passed all 31 Python tests. A separate native runtime
+The original Week-3 local suite passed all 31 Python tests. The boundary revision
+adds checks of the Python-prepared outputs, ABI 2, unchanged borrowed NumPy
+inputs, and absence of the moved calculations from the native driver.
+The revised suite passes all 33 tests locally, including both reference
+resolutions and both precision conventions covered above; tolerances were
+not loosened. The original scientific source files remain unchanged.
+A separate native runtime
 harness passed 1,200 allocation, interpolation, LU, non-finite-integrand and
 failure/recovery exercises, including injected allocation failures. The same
 harness passed AddressSanitizer and UndefinedBehaviorSanitizer; macOS `leaks`

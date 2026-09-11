@@ -9,6 +9,8 @@ import unittest
 import numpy as np
 from congruents import Preparation, Grid, SolverGrid, load_catalogue, solve
 from congruents.solver import _load, _TableInput
+from congruents.solver_inputs import transport_inputs, free_free_inputs
+from congruents.preparation import PROPERTY_NAMES
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
@@ -81,6 +83,42 @@ class Week3Tests(unittest.TestCase):
         for group, _ in FILES:
             for name, values in getattr(self.result, group).items():
                 np.testing.assert_array_equal(values, getattr(serial, group)[name])
+
+    def test_python_preparation_and_borrowed_arrays(self):
+        rows = np.array([g.as_row() for g in self.p.galaxies])
+        props = np.array([[p[k] for k in PROPERTY_NAMES] for p in self.p.properties])
+        prepared, cp = transport_inputs(rows, props, self.result.kinetic_energy_gev)
+        for i, (name, values) in enumerate(self.result.transport.items()):
+            if i != 5:  # Only secondary injection is produced by native quadrature.
+                np.testing.assert_array_equal(prepared[:,i], values)
+        ff = free_free_inputs(rows, props, self.result.photon_energy_gev)
+        np.testing.assert_array_equal(ff[:,0], self.result.emission["free_free"])
+        np.testing.assert_array_equal(ff[:,1], self.result.emission["tau_free_free"])
+        inputs = [np.ascontiguousarray(x) for x in
+                  (self.result.kinetic_energy_gev, props[:,1], cp, prepared[:,0])]
+        copies = [a.copy() for a in inputs]
+        for a in inputs:
+            a.flags.writeable = False
+        secondary = np.zeros_like(prepared[:,0])
+        status = np.zeros(11, dtype=np.int32)
+        dp, ip = ct.POINTER(ct.c_double), ct.POINTER(ct.c_int)
+        lib = _load()
+        self.assertEqual(lib.cg_solver_abi(), 2)
+        self.assertEqual(lib.cg_transport_batch(4,11,self.grid.cosmic_rays,
+            *(a.ctypes.data_as(dp) for a in inputs), secondary.ctypes.data_as(dp),
+            status.ctypes.data_as(ip)), 0)
+        np.testing.assert_array_equal(status, 0)
+        for a, expected in zip(inputs, copies):
+            np.testing.assert_array_equal(a, expected)
+        np.testing.assert_array_equal(secondary,
+            self.result.transport["secondary_injection_gev_s"])
+
+    def test_solver_boundary_excludes_precomputed_physics(self):
+        source = (ROOT/"csrc/solver.c").read_text()
+        for name in ("C_norm_E(", "tau_FF_MK(", "eps_FF(",
+                     "gsl_sf_hyperg_0F1(", "J("):
+            self.assertNotIn(name, source)
+        self.assertEqual(source.count("#pragma omp parallel for"), 2)
 
     def test_save_and_readonly(self):
         path = self.folder/"result.npz"
