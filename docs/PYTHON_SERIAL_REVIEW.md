@@ -3,6 +3,9 @@
 Revision: 2026-09-11. Development branch:
 `refactor/python-serial-galaxy-openmp`, based on the existing Week-2 work.
 
+This is the preparation-stage review. The subsequent optional solver boundary
+and current remaining work are documented in [WEEK3_REVIEW.md](WEEK3_REVIEW.md).
+
 ## Reviewed boundary
 
 | Responsibility | Implementation now |
