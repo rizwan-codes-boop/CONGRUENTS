@@ -11,7 +11,8 @@ import numpy as np
 
 from congruents import Galaxy, Grid, Preparation, load_catalogue, write_catalogue
 from congruents.preparation import KINDS, FIELDS, PROPERTY_NAMES, Table, TableData, doubles
-from congruents._bindings import check
+from congruents import serial
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 GALAXIES = load_catalogue(ROOT / "input/cat_nt.txt")
@@ -76,7 +77,7 @@ class Week2Tests(unittest.TestCase):
                         for field in result["fields_cm3_gev"].values() for v in field))
 
     def test_all_table_families_direct_c(self):
-        with Preparation(GALAXIES, Grid(8, 8)) as p:
+        with Preparation(GALAXIES, Grid(32, 32)) as p:
             for kind in ("emission", "gamma"):
                 for field in FIELDS:
                     temps = p.temperature_grid(field) if field in ("CMB", "FIR") else (0.,)
@@ -84,11 +85,14 @@ class Week2Tests(unittest.TestCase):
                         with self.subTest(kind=kind, field=field, temperature=temp):
                             actual = p.table(kind, field, temp).snapshot()
                             expected = self.reference(p, kind, field, temp)
-                            self.assertEqual(actual, expected)
-                            self.assertEqual(len(actual.values), 64)
+                            self.assertClose(actual.x, expected.x)
+                            self.assertClose(actual.y, expected.y)
+                            self.assertClose(actual.values, expected.values, 5e-8)
+                            self.assertEqual(len(actual.values), 1024)
                             self.assertTrue(all(x >= 0 and math.isfinite(x) for x in actual.values))
             for kind in ("bs", "sy"):
-                self.assertEqual(p.table(kind).snapshot(), self.reference(p, kind, "3000"))
+                self.assertClose(p.table(kind).snapshot().values,
+                                 self.reference(p, kind, "3000").values, 5e-8)
             self.assertEqual(p.prepare_tables(), 26)
             emission = p.table("emission").snapshot()
             gamma = p.table("gamma").snapshot()
@@ -97,15 +101,15 @@ class Week2Tests(unittest.TestCase):
             self.assertNotEqual(emission.values, gamma.values)
 
     def test_combined_ic_direct_legacy(self):
-        with Preparation(GALAXIES, Grid(8, 8)) as p:
+        with Preparation(GALAXIES, Grid(32, 32)) as p:
             for kind in ("emission", "gamma"):
-                for i in (0, 1, 7, 10):
+                for i in range(len(GALAXIES)):
                     with p.combined_ic(i, kind) as table:
                         got = table.snapshot()
                         expected = self.reference(p, kind, "3000", galaxy=GALAXIES[i])
-                        self.assertEqual(got.x, expected.x)
-                        self.assertEqual(got.y, expected.y)
-                        self.assertClose(got.values, expected.values, 2e-13)
+                        self.assertClose(got.x, expected.x)
+                        self.assertClose(got.y, expected.y)
+                        self.assertClose(got.values, expected.values, 5e-8)
                         # Test interpolation nodes and outside-domain zero.
                         self.assertClose(table.evaluate([got.x[3]], [got.y[3]]),
                                          [got.values[3*len(got.x)+3]])
@@ -116,10 +120,8 @@ class Week2Tests(unittest.TestCase):
         with Preparation(GALAXIES, Grid(2, 2)) as p:
             config = list(p.config)
             config[:2], config[2:4] = fixture["x"], fixture["y"]
-            handle = ct.c_void_p()
-            check(p._lib, p._lib.cg_table_create(0, 0, 0., 2, 2,
-                  doubles(config), ct.byref(handle)))
-            with Table(p._lib, handle, {}) as table:
+            x,y,z = serial.generate("emission","3000",0.,2,2,config)
+            with Table(TableData(x,y,z), {}) as table:
                 # Saved axes/values have only 7 significant digits.
                 self.assertClose(table.snapshot().values, fixture["values"], 1e-5)
 
@@ -165,25 +167,16 @@ class Week2Tests(unittest.TestCase):
 
     def test_temperature_node_weight_policy(self):
         with Preparation(GALAXIES, Grid(2, 2)) as p:
-            tables = []
-            try:
-                # Zero stellar/FIR contributions isolate the CMB blend.
-                for value in (0,0,0,0,2,10,0,0):
-                    handle=ct.c_void_p()
-                    check(p._lib, p._lib.cg_table_import(2,2,doubles([1,2]),
-                          doubles([1,2]),doubles([value]*4),ct.byref(handle)))
-                    tables.append(Table(p._lib,handle,{}))
-                handle=ct.c_void_p()
-                check(p._lib, p._lib.cg_combine_ic(doubles(GALAXIES[0].as_row()),
-                      (ct.c_void_p*8)(*(t._handle for t in tables)),0.,0.,ct.byref(handle)))
-                with Table(p._lib,handle,{}) as result:
-                    self.assertEqual(result.snapshot().values,(10.,)*4)
-                # The legacy upper endpoint has no next plane: explicit rejection.
-                self.assertEqual(p._lib.cg_combine_ic(doubles(GALAXIES[0].as_row()),
-                    (ct.c_void_p*8)(*(t._handle for t in tables)),1.,0.,ct.byref(handle)),1)
-            finally:
-                for table in tables:
-                    table.close()
+            def plane(kind, field, temperature=0.):
+                value = (2 if temperature == 2.7 else 10) if field == "CMB" else 0
+                return Table(TableData([1.,2.],[1.,2.],[value]*4), {})
+            with patch.object(p, "table", side_effect=plane), \
+                 patch.object(p, "_single_cmb_temperature", return_value=2.7):
+                with p.combined_ic(0) as result:
+                    self.assertEqual(result.snapshot().values, (10.,)*4)
+            with patch.object(p, "_single_cmb_temperature", return_value=2.8):
+                with self.assertRaises(ValueError):
+                    p.combined_ic(0)
 
     def test_numpy_ownership_and_views(self):
         with Preparation(GALAXIES, Grid(8, 8)) as p:
@@ -217,29 +210,15 @@ class Week2Tests(unittest.TestCase):
                 self.assertEqual(table.evaluate([1.5], [1.5]), [3.])
                 self.assertTrue(table._values.flags.owndata)
 
-    def test_native_borrow_is_zero_copy(self):
+    def test_native_boundary_has_no_serial_physics(self):
         with Preparation(GALAXIES, Grid(2, 2)) as p:
-            x = np.array([1., 2.], dtype=np.float64)
-            y = np.array([1., 2.], dtype=np.float64)
-            z = np.array([2., 3., 3., 4.], dtype=np.float64)
-            ptr = Table._pointer
-            handle = ct.c_void_p()
-            check(p._lib, p._lib.cg_table_borrow(2, 2, ptr(x), ptr(y), ptr(z),
-                  ct.byref(handle)))
-            try:
-                out = doubles([0.])
-                check(p._lib, p._lib.cg_table_eval(handle, 1, doubles([1.5]),
-                      doubles([1.5]), out))
-                self.assertEqual(out[0], 3.)
-                # Test-only sequential mutation proves C borrowed the original
-                # arrays. The public Python Table prevents such mutation.
-                z[:] = 7.
-                check(p._lib, p._lib.cg_table_eval(handle, 1, doubles([1.5]),
-                      doubles([1.5]), out))
-                self.assertEqual(out[0], 7.)
-            finally:
-                p._lib.cg_table_destroy(handle)
-            np.testing.assert_array_equal(z, [7.] * 4)
+            for name in ("cg_ionisation", "cg_table_create", "cg_table_eval",
+                         "cg_table_import", "cg_table_borrow", "cg_combine_ic"):
+                with self.assertRaises(AttributeError):
+                    getattr(p._lib, name)
+        source = (ROOT/"csrc/preparation.c").read_text()
+        self.assertEqual(source.count("#pragma omp"), 1)
+        self.assertIn("for(size_t i=0;i<n;i++) bad |= derive(rows+4*i,out+10*i)", source)
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from congruents import Context
 from congruents._bindings import load_library
+from congruents.preparation import bind
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,7 +16,7 @@ class Week1Tests(unittest.TestCase):
             [str(ROOT / "build/direct_ionisation")], text=True).split()]
         for threads in (1, 4):
             with Context(threads) as context:
-                self.assertEqual(context.version, "0.1.0")
+                self.assertEqual(context.version, "0.2.0")
                 self.assertTrue(context.openmp_enabled)
                 actual = []
                 for density in (0., 1.e-3, 1., 1.e3):
@@ -67,18 +68,19 @@ class Week1Tests(unittest.TestCase):
 
     def test_raw_boundary(self):
         lib = load_library()
+        bind(lib)
         handle = ct.c_void_p()
         self.assertEqual(lib.cg_context_create(0, ct.byref(handle)), 1)
         self.assertFalse(handle.value)
         self.assertEqual(lib.cg_context_create(1, None), 1)
         self.assertEqual(lib.cg_context_create(1, ct.byref(handle)), 0)
         try:
-            out = (ct.c_double * 1)(123.)
-            bad = (ct.c_double * 1)(float("nan"))
-            self.assertEqual(lib.cg_ionisation(handle, 1, bad, 1., out), 1)
+            out = (ct.c_double * 10)(123.)
+            bad = (ct.c_double * 4)(float("nan"), 1., 1., 1.)
+            self.assertEqual(lib.cg_galaxies(handle, 1, bad, out), 1)
             self.assertEqual(out[0], 123.)
-            self.assertEqual(lib.cg_ionisation(handle, 1, None, 1., out), 1)
-            self.assertEqual(lib.cg_ionisation(None, 0, None, 1., None), 1)
+            self.assertEqual(lib.cg_galaxies(handle, 1, None, out), 1)
+            self.assertEqual(lib.cg_galaxies(None, 0, None, None), 1)
         finally:
             lib.cg_context_destroy(handle)
             lib.cg_context_destroy(None)
