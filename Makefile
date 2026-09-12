@@ -77,7 +77,7 @@ $(SHARED_LIBRARY): csrc/congruents.c csrc/preparation.c csrc/internal.h csrc/inc
 test-portable: shared
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_serial.py -v
 
-test: shared build/direct_ionisation build/direct_preparation
+test: shared solver reference-week3 test-runtime build/direct_ionisation build/direct_preparation
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
 
 build/direct_ionisation: tests/direct_ionisation.c CR_spectra/ionisation.h physical_constants.h | build
@@ -87,6 +87,64 @@ test-week1: shared build/direct_ionisation
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_week1.py -v
 
 .PHONY: test-week2
+.PHONY: solver
+SOLVER_LIBRARY := build/libcongruents_solver.$(LIB_SUFFIX)
+ifeq ($(UNAME_S),Darwin)
+SOLVER_LINK_FLAGS := -Wl,-dead_strip -Wl,-exported_symbol,_cg_solver_abi -Wl,-exported_symbol,_cg_solver_batch -Wl,-exported_symbol,_cg_transport_batch
+else
+SOLVER_LINK_FLAGS := -Wl,--gc-sections -Wl,--exclude-libs,ALL
+endif
+solver: $(SOLVER_LIBRARY)
+
+.PHONY: reference-week3
+reference-week3: build/reference_precompute build/reference_precompute_full build/reference_spectra build/reference_precompute_medium build/reference_spectra_medium
+
+build/reference_precompute_medium: tests/reference_week3.py create_interp_objects.c $(MODEL_HEADERS) | build
+	$(PYTHON) tests/reference_week3.py precompute --medium | $(CC) $(CPPFLAGS) $(CFLAGS) -x c - -x none $(LDLIBS) -o $@
+
+build/reference_spectra_medium: tests/reference_week3.py spectra.c $(MODEL_HEADERS) | build
+	$(PYTHON) tests/reference_week3.py spectra --medium | $(CC) $(CPPFLAGS) $(CFLAGS) -x c - -x none $(LDLIBS) -o $@
+
+build/reference_precompute: tests/reference_week3.py create_interp_objects.c $(MODEL_HEADERS) | build
+	$(PYTHON) tests/reference_week3.py precompute | $(CC) $(CPPFLAGS) $(CFLAGS) -x c - -x none $(LDLIBS) -o $@
+
+build/reference_precompute_full: tests/reference_week3.py create_interp_objects.c $(MODEL_HEADERS) | build
+	$(PYTHON) tests/reference_week3.py precompute --full-precision | $(CC) $(CPPFLAGS) $(CFLAGS) -x c - -x none $(LDLIBS) -o $@
+
+.PHONY: test-week3
+test-week3: shared solver reference-week3 test-runtime
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_week3.py -v
+
+.PHONY: test-runtime test-runtime-sanitized
+build/test_solver_runtime: tests/test_solver_runtime.c csrc/solver_runtime.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@
+
+test-runtime: build/test_solver_runtime
+	build/test_solver_runtime
+
+# Clang can audit the portable runtime independently of GNU nested callbacks.
+SANITIZER_CC ?= clang
+ifeq ($(UNAME_S),Darwin)
+RUNTIME_ASAN_OPTIONS ?= detect_leaks=0
+else
+RUNTIME_ASAN_OPTIONS ?= detect_leaks=1
+endif
+build/test_solver_runtime_sanitized: tests/test_solver_runtime.c csrc/solver_runtime.h | build
+	$(SANITIZER_CC) $(CPPFLAGS) -std=c11 -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined $< $(LDLIBS) -o $@
+
+test-runtime-sanitized: build/test_solver_runtime_sanitized
+	ASAN_OPTIONS=$(RUNTIME_ASAN_OPTIONS) build/test_solver_runtime_sanitized
+
+.PHONY: test-runtime-leaks
+test-runtime-leaks: build/test_solver_runtime
+	leaks --atExit -- build/test_solver_runtime
+
+build/reference_spectra: tests/reference_week3.py spectra.c $(MODEL_HEADERS) | build
+	$(PYTHON) tests/reference_week3.py spectra | $(CC) $(CPPFLAGS) $(CFLAGS) -x c - -x none $(LDLIBS) -o $@
+
+$(SOLVER_LIBRARY): Makefile csrc/solver.c csrc/solver_runtime.h csrc/steady_state_native.h csrc/include/solver.h $(MODEL_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -ffunction-sections -fdata-sections -fPIC -fvisibility=hidden $(SHARED_FLAGS) csrc/solver.c $(LDLIBS) $(SOLVER_LINK_FLAGS) -o $@
+
 build/direct_preparation: tests/direct_preparation.c $(MODEL_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@
 

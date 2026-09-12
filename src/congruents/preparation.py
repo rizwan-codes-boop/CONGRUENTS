@@ -277,27 +277,29 @@ class Preparation:
             self.table("sy")
             return len(self._tables)
 
-    def combined_ic(self, index, kind="emission"):
+    def combined_ic(self, index, kind="emission", *, _table_provider=None, _temperature_provider=None):
         """Independent Python-combined table; legacy reversed weights are retained."""
         with self._lock:
             self._ensure_open()
             if kind not in ("emission", "gamma"):
                 raise ValueError("Expected emission or gamma")
             galaxy = self.galaxies[index]
-            planes = [self.table(kind, field) for field in FIELDS[:4]]
+            table_at = self.table if _table_provider is None else _table_provider
+            temperatures = self.temperature_grid if _temperature_provider is None else _temperature_provider
+            planes = [table_at(kind, field) for field in FIELDS[:4]]
             fractions = []
             # C computed dust temperature in its galaxy loop; CMB setup is serial Python.
             target_cmb = self._single_cmb_temperature(galaxy)
             for field, target in (("CMB", target_cmb),
                                   ("FIR", self.properties[index]["dust_temperature_k"])):
-                grid = self.temperature_grid(field)
+                grid = temperatures(field)
                 j = bisect.bisect_right(grid, target) - 1
                 if j < 0 or j >= len(grid)-1:
                     raise ValueError("Temperature has no safe legacy interpolation bracket")
                 # Match legacy position-index interpolation before taking fraction.
                 position = j + (target-grid[j])/(grid[j+1]-grid[j])
                 fractions.append(position-j)
-                planes.extend([self.table(kind, field, grid[j]), self.table(kind, field, grid[j+1])])
+                planes.extend([table_at(kind, field, grid[j]), table_at(kind, field, grid[j+1])])
             for table in planes:
                 table._ensure_open()
             d=serial.dilution(galaxy,self.properties[index]["dust_temperature_k"])

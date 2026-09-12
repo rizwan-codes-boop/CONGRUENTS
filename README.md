@@ -2,8 +2,19 @@
 
 The interface uses Python for serial preparation and C/OpenMP for galaxy batches,
 following the supervisor-confirmed [requirements](docs/PROJECT_REQUIREMENTS.md).
-The existing Week-1/Week-2 features have been revised; the full spectrum solver
-has **not yet** been exposed through Python.
+The existing Week-1/Week-2 features have been revised. Week 3 exposes the
+two-zone solver and source emission; observer-frame production is still pending.
+
+See [Week 3: solver, emission and tests](docs/WEEK3_REVIEW.md). Its optional
+native library requires the existing GSL/cubature dependencies:
+
+```sh
+make DEPENDENCY_ROOT=../CONGRUENTS-c test-week3 PYTHON=python
+PYTHONPATH=src python examples/week3.py
+```
+
+This is a reduced-grid demonstration for all 11 galaxies, not a converged
+production spectrum. No final Figure 9 or observer-frame agreement is claimed.
 
 See [the current architecture and validation review](docs/PYTHON_SERIAL_REVIEW.md).
 The older Week-1/Week-2 reviews describe historical implementations.
@@ -26,7 +37,15 @@ galaxy spectra. Run it twice to see cold/warm cache behaviour.
 Python owns ionisation diagnostics, grids, radiation fields, IC/BS/SY table
 generation, interpolation, combination, storage and caching. The native library
 contains the galaxy-property OpenMP loop, its directly used helpers, and minimal
-context/ABI plumbing. There are no Python callbacks inside native workers.
+context/ABI plumbing. Python also prepares normalization, calorimetry, diffusion,
+primary/proton spectra and free-free arrays. The optional solver library adds
+secondary-injection integrals, two-zone solves and nonthermal emission inside
+galaxy loops. There are no Python callbacks
+inside native workers.
+
+The solver uses ABI 2: rebuild with `make solver` after updating. See
+[`docs/WEEK3_REVIEW.md`](docs/WEEK3_REVIEW.md) for the remaining native helpers
+and the limits of this precomputation boundary.
 
 ## Building on other systems
 
