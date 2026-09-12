@@ -2,6 +2,11 @@
 
 Branch: `feature/week3-solver-emission`. Reference: unchanged CONGRUENTS-i.
 
+Historical Week-3 record: Week 4 now connects observer output and diagnostics,
+and advances the solver ABI to 3 with an optional radio-output buffer. See
+`WEEK4_REVIEW.md` for current capabilities and acceptance results; ABI 2 below
+describes the Week-3 release rather than the current development branch.
+
 Week-3 implementation and local regression checks are complete. This is not
 yet a validated full-production replacement; the acceptance gates below remain.
 

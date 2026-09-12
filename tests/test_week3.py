@@ -103,7 +103,7 @@ class Week3Tests(unittest.TestCase):
         status = np.zeros(11, dtype=np.int32)
         dp, ip = ct.POINTER(ct.c_double), ct.POINTER(ct.c_int)
         lib = _load()
-        self.assertEqual(lib.cg_solver_abi(), 2)
+        self.assertEqual(lib.cg_solver_abi(), 3)
         self.assertEqual(lib.cg_transport_batch(4,11,self.grid.cosmic_rays,
             *(a.ctypes.data_as(dp) for a in inputs), secondary.ctypes.data_as(dp),
             status.ctypes.data_as(ip)), 0)
@@ -145,7 +145,7 @@ class Week3Tests(unittest.TestCase):
         lib = _load()
         self.assertEqual(lib.cg_transport_batch(1,0,0,None,None,None,None,None,None), 1)
         self.assertEqual(lib.cg_solver_batch(1,0,0,0,0,
-                         *([None]*7),*([None]*4),None,None,None), 1)
+                         *([None]*7),*([None]*4),None,None,None,None), 1)
         # The coarse-grid halo solve produces non-finite integrands on this
         # reference catalogue. Fail safely, then prove a valid run still works.
         with Preparation(self.catalogue, Grid(8,8)) as p:

@@ -13,7 +13,8 @@ typedef struct {
  * emission[n][15][np] GeV^-1 s^-1: raw, before Python disc attenuation.
  * Order: IC1d,IC2d,BS1d,BS2d,SY1d,SY2d,IC1h,IC2h,SY1h,SY2h,FF,tau_FF,pi,pi_fcal1,nu.
  * statuses[n]: discard a galaxy's output unless its status is CG_OK.
- * Independent preparation API remains ABI 2; this optional solver ABI is 2.
+ * Optional radio[n][4]: raw SY primary/secondary disc/halo at 1.49 GHz.
+ * Independent preparation API remains ABI 2; this optional solver ABI is 3.
  */
 CG_API unsigned cg_solver_abi(void);
 /* Secondary injection only: density[n], Cp[n], fcal[n][ne], output[n][ne].
@@ -28,5 +29,5 @@ CG_API int cg_solver_batch(int threads,size_t n,size_t ne,size_t np,size_t ns,
     const double *electron_energy,const double *photon_energy,const double *props,
     const double *diffusion,const double *injection,const double *kinetic,const double *fcal,const cg_table_input *ic,
     const cg_table_input *gamma,const cg_table_input *bs,const cg_table_input *sy,
-    double *electrons,double *emission,int *statuses);
+    double *electrons,double *emission,double *radio,int *statuses);
 #endif

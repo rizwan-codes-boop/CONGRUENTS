@@ -1,0 +1,236 @@
+{
+  "T_CR.txt": {
+    "passed": true,
+    "values": 1000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "E_gam.txt": {
+    "passed": true,
+    "values": 500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "fcal.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "gal_data.txt": {
+    "passed": true,
+    "values": 99,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "Urad_Ub.txt": {
+    "passed": true,
+    "values": 88,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_ff.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "E_loss_leptons.txt": {
+    "passed": true,
+    "values": 176,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "E_loss_nucrit.txt": {
+    "passed": true,
+    "values": 110,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "CR_specs.txt": {
+    "passed": true,
+    "values": 55000,
+    "mismatches": 0,
+    "max_relative_error": 1.3698288624609998e-07
+  },
+  "CR_specs_inj.txt": {
+    "passed": true,
+    "values": 44000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "L_radio.txt": {
+    "passed": true,
+    "values": 55,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "distmod.txt": {
+    "passed": true,
+    "values": 11,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "L_gamma.txt": {
+    "passed": true,
+    "values": 11,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_pi.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_pi_fcal1.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_nu.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_FF.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_IC_1_z1.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_IC_1_z2.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_IC_2_z1.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_IC_2_z2.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_BS_1_z1.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_BS_2_z1.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_SY_1_z1.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_SY_1_z2.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_SY_2_z1.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "spec_SY_2_z2.txt": {
+    "passed": true,
+    "values": 5500,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z1_SY.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z1_BS.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z1_IC.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z1_DI.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z1_IO.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z2_SY.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z2_BS.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z2_IC.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z2_DI.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_z2_IO.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_protons_PP.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  },
+  "tau_loss/tau_loss_protons_DI.txt": {
+    "passed": true,
+    "values": 11000,
+    "mismatches": 0,
+    "max_relative_error": 0.0
+  }
+}

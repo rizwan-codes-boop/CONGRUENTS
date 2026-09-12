@@ -50,7 +50,9 @@ if kind == "spectra":
                        for name,(array,size) in exports.items())
     anchor = "    double **array2Dlist[4]"
     # Stop at the Week-3 boundary; observer/output postprocessing is Week 4.
-    replace_once(anchor, writes+"\nreturn 0;\n"+anchor)
+    if "--observer" in sys.argv:
+        writes += '\nwrite_2D_file(n_gal,n_E_gam,tau_gg,"reference",string_cat(outfp,"/tau_gg.txt"));\n'
+    replace_once(anchor, writes+("\n" if "--observer" in sys.argv else "\nreturn 0;\n")+anchor)
 if kind == "precompute" and "--full-precision" in sys.argv:
     # Match Python's full-precision in-memory tables, not the legacy text
     # writer's six-digit rounding. Otherwise its truncated upper bounds can
