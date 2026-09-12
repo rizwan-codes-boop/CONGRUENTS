@@ -16,6 +16,9 @@ The optional solver/emission boundary is documented in docs/WEEK3_REVIEW.md.
 Its ABI-2 revision precomputes transport and free-free arrays in Python; do not
 move those calculations back into workers. Remaining native integration/solver
 helpers are explicitly inventoried there, not assumed to be irreducible.
-Full observer-frame orchestration and production acceptance remain outstanding.
+Week-4 Python observer/diagnostic orchestration is documented in
+docs/WEEK4_REVIEW.md. Solver ABI 3 adds optional native radio emissivities only;
+do not move diagnostic quadratures or output processing back into C.
+Consult the review for measured production/platform acceptance, not assumptions.
 
 Do not merge or push without user authorisation. Preserve unrelated user edits.

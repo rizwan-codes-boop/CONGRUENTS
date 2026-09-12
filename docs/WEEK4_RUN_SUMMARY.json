@@ -1,0 +1,46 @@
+{
+  "platform": "macOS arm64",
+  "resolution": {
+    "table": [
+      1000,
+      1000
+    ],
+    "cosmic_rays": 1000,
+    "photons": 500,
+    "solver_cells": 500,
+    "galaxies": 11,
+    "threads": 4
+  },
+  "standard_output_files": 39,
+  "compared_values": 326550,
+  "first_run": {
+    "seconds": 5560.48,
+    "cache_hits": 1,
+    "cache_misses": 25
+  },
+  "cached_run": {
+    "seconds": 1955.95,
+    "cache_hits": 26,
+    "cache_misses": 0,
+    "application_completed": true,
+    "timing_wrapper_exit_status": 1,
+    "peak_memory_bytes": null,
+    "timing_wrapper_limitation": "macOS kern.clockrate query not permitted"
+  },
+  "comparisons": {
+    "warm": {
+      "files": 39,
+      "passed": true,
+      "maximum_relative_error": 1.3698288624609998e-7
+    },
+    "repeat": {
+      "files": 39,
+      "passed": true,
+      "maximum_relative_error": 0
+    }
+  },
+  "tests_passed": 41,
+  "linux_hpc_executed": false,
+  "production_sanitizer_coverage": false,
+  "convergence_certified": false
+}
