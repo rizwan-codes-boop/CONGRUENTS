@@ -2,7 +2,7 @@
 import ctypes as ct
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import sys
 import threading
@@ -39,14 +39,14 @@ def _load(path=None):
     lib = ct.CDLL(str(path.resolve()))
     lib.cg_solver_abi.argtypes = []
     lib.cg_solver_abi.restype = ct.c_uint
-    if lib.cg_solver_abi() != 2:
+    if lib.cg_solver_abi() != 3:
         raise RuntimeError("Unsupported solver ABI")
     lib.cg_transport_batch.argtypes = [ct.c_int, ct.c_size_t, ct.c_size_t,
                                       _DP, _DP, _DP, _DP, _DP, _IP]
     lib.cg_transport_batch.restype = ct.c_int
     lib.cg_solver_batch.argtypes = [ct.c_int, *([ct.c_size_t]*4),
                                    *([_DP]*7), *([ct.POINTER(_TableInput)]*4),
-                                   _DP, _DP, _IP]
+                                   _DP, _DP, _DP, _IP]
     lib.cg_solver_batch.restype = ct.c_int
     return lib
 
@@ -88,6 +88,7 @@ class SolverResult:
     electrons: dict
     emission: dict
     metadata: dict
+    diagnostics: dict = field(default_factory=dict)
 
     def save(self, path):
         """Save named arrays without pickle; this is not legacy output format."""
@@ -95,7 +96,7 @@ class SolverResult:
                   "electron_energy_gev": self.electron_energy_gev,
                   "photon_energy_gev": self.photon_energy_gev,
                   "metadata_json": np.array(json.dumps(self.metadata, sort_keys=True))}
-        for group in ("transport", "electrons", "emission"):
+        for group in ("transport", "electrons", "emission", "diagnostics"):
             arrays.update({f"{group}__{name}": value for name, value in getattr(self, group).items()})
         np.savez_compressed(path, **arrays)
 
@@ -110,7 +111,7 @@ EMISSION = ("IC_primary_disc", "IC_secondary_disc", "BS_primary_disc", "BS_secon
             "pion", "pion_full_calorimetry", "neutrino")
 
 
-def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_precision=True):
+def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_precision=True, diagnostics=False):
     """Return source components for all catalogue rows, in order.
 
     Electron outputs: GeV^-1; emission: GeV^-1 s^-1, except dimensionless
@@ -126,6 +127,8 @@ def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_preci
         raise TypeError("Expected SolverGrid")
     if not isinstance(legacy_table_precision, bool):
         raise TypeError("legacy_table_precision must be bool")
+    if not isinstance(diagnostics, bool):
+        raise TypeError("diagnostics must be bool")
     if isinstance(threads, bool) or not isinstance(threads, int) or not 1 <= threads <= 2147483647:
         raise ValueError("threads must be a positive C integer")
     with preparation._lock, _LOCK:
@@ -154,6 +157,8 @@ def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_preci
         injection = np.ascontiguousarray(transport[:,4:6,:])
         electrons = np.zeros((n,4,ne))
         emission = np.zeros((n,15,np_))
+        radio = np.zeros((n,4)) if diagnostics else None
+        diagnostic_arrays = {}
         fcal = np.ascontiguousarray(transport[:,0,:])
         combined = []
         rounded = {}
@@ -193,10 +198,15 @@ def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_preci
                 _pointer(electron),_pointer(photon),_pointer(props),_pointer(diffusion),_pointer(injection),
                 _pointer(kinetic),_pointer(fcal),
                 ic,gamma,ct.byref(bs),ct.byref(sy),_pointer(electrons),_pointer(emission),
+                _pointer(radio) if diagnostics else None,
                 statuses.ctypes.data_as(_IP))
             _check(code,statuses)
             emission[:,:6,:] *= np.exp(-free_free[:,1,None,:])
             emission[:,10:12,:] = free_free
+            if diagnostics:
+                from .diagnostics import calculate
+                diagnostic_arrays = calculate(preparation,kinetic,electron,photon,transport,
+                    electrons,emission,radio,combined[1],table_at("bs"))
         finally:
             for family in combined:
                 for table in family:
@@ -209,11 +219,12 @@ def solve(preparation, grid=None, threads=1, library=None, *, legacy_table_preci
             {name:transport[:,i,:] for i,name in enumerate(TRANSPORT)},
             {name:electrons[:,i,:] for i,name in enumerate(ELECTRONS)},
             {name:emission[:,i,:] for i,name in enumerate(EMISSION)},
-            {"solver_abi": 2, "legacy_table_precision": legacy_table_precision,
+            {"solver_abi": 3, "legacy_table_precision": legacy_table_precision,
              "catalogue": rows.tolist(), "catalogue_columns": ["z","Mstar_Msun","Re_kpc","SFR_Msun_yr"],
              "cosmic_ray_bins": ne, "photon_bins": np_, "solver_cells": grid.cells,
              "table_grid": [preparation.grid.nx, preparation.grid.ny],
              "threads": threads, "preparation_fingerprint": preparation._library_hash,
              "solver_sha256": hashlib.sha256(Path(lib._name).read_bytes()).hexdigest(),
              "emission_units": "GeV^-1 s^-1 except dimensionless tau_free_free",
-             "particle_units": "GeV^-1", "frame": "source; disc free-free applied"})
+             "particle_units": "GeV^-1", "frame": "source; disc free-free applied"},
+            diagnostic_arrays)

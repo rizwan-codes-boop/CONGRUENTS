@@ -20,7 +20,7 @@ double q_p_inject=2.2, q_e_inject=2.2;
 double T_CR_lims__GeV[2]={1e-3,1e8};
 double E_CRe_lims__GeV[2]={1e-3+5.10998950e-4,1e8+5.10998950e-4};
 static atomic_flag cg_solver_busy=ATOMIC_FLAG_INIT;
-unsigned cg_solver_abi(void) { return 2; }
+unsigned cg_solver_abi(void) { return 3; }
 
 static int cg_axis(size_t n,const double *v) {
     if(!v || n<2 || n>4096) return 0;
@@ -76,7 +76,7 @@ int cg_transport_batch(int threads,size_t n,size_t ne,const double *t,const doub
 static void cg_solve_galaxy(size_t ne,size_t np,size_t ns,const double *e,const double *ph,
     const double *p,const double *diff,const double *inj,const double *kinetic,const double *fcal,const cg_table_input *ic,
     const cg_table_input *gamma,const cg_table_input *bs,const cg_table_input *sy,
-    double *electrons,double *emission) {
+    double *electrons,double *emission,double *radio) {
     gsl_spline_object_2D emit=cg_bind_table(ic), transition=cg_bind_table(gamma), brems=cg_bind_table(bs);
     gsl_spline_object_1D sync=gsl_so1D(sy->nx,sy->x,sy->values);
     gsl_spline_object_1D dd=gsl_so1D(ne,e,diff), dh=gsl_so1D(ne,e,diff+ne);
@@ -96,6 +96,11 @@ static void cg_solve_galaxy(size_t ne,size_t np,size_t ns,const double *e,const 
     cg_active->phase="halo steady state";
     CRe_steadystate_solve(2,bounds,(int)ns,p[1]/1000.,p[3],50*p[0],1,&transition,brems,dh,qh1,qh2,&ss[2],&ss[3]);
     for(size_t k=0;k<4;k++) for(size_t j=0;j<ne;j++) electrons[k*ne+j]=gsl_so1D_eval(ss[k],e[j]);
+    if(radio) {
+        for(size_t k=0;k<4;k++)
+            radio[k]=eps_SY_4(1.49e9*h__GeVs,k<2?p[2]:p[3],sync,ss[k]);
+        if(!cg_values(4,radio,0)) cg_fail(CG_NUMERIC);
+    }
     cg_active->phase="emission";
     for(size_t j=0;j<np;j++) {
         double energy=ph[j];
@@ -123,7 +128,7 @@ int cg_solver_batch(int threads,size_t n,size_t ne,size_t np,size_t ns,
     const double *e,const double *ph,const double *props,const double *diff,const double *inj,
     const double *kinetic,const double *fcal,
     const cg_table_input *ic,const cg_table_input *gamma,const cg_table_input *bs,const cg_table_input *sy,
-    double *electrons,double *emission,int *statuses) {
+    double *electrons,double *emission,double *radio,int *statuses) {
     if(threads<1 || !n || n>100000 || ns<4 || ns>500 || !cg_axis(ne,e) || !cg_axis(np,ph) ||
        !cg_values(8*n,props,1) || !cg_values(2*n*ne,diff,1) || !cg_values(2*n*ne,inj,0) ||
        !cg_axis(ne,kinetic) || !cg_values(n*ne,fcal,0) ||
@@ -150,7 +155,7 @@ int cg_solver_batch(int threads,size_t n,size_t ne,size_t np,size_t ns,
         cg_active=w;
         if(!setjmp(w->escape))
             cg_solve_galaxy(ne,np,ns,e,ph,props+8*i,diff+2*ne*i,inj+2*ne*i,
-                           kinetic,fcal+ne*i,ic+i,gamma+i,bs,sy,electrons+4*ne*i,emission+15*np*i);
+                           kinetic,fcal+ne*i,ic+i,gamma+i,bs,sy,electrons+4*ne*i,emission+15*np*i,radio?radio+4*i:NULL);
         statuses[i]=w->status;
         cg_cleanup(w);
         cg_active=NULL;

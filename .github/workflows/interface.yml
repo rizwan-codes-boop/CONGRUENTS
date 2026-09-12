@@ -18,3 +18,16 @@ jobs:
           make shared test-portable CC="$(brew --prefix gcc@14)/bin/gcc-14" PYTHON=python
       - if: runner.os == 'Linux'
         run: make shared test-portable CC=gcc PYTHON=python
+  full-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: sudo apt-get update && sudo apt-get install -y libgsl-dev libcubature-dev
+      - run: python -m pip install -e '.[units]'
+      - run: >-
+          make test CC=gcc PYTHON=python
+          CPPFLAGS="-I. -ICR_spectra -I/usr/include/gsl"
+          LDLIBS="/usr/lib/x86_64-linux-gnu/libgsl.a /usr/lib/x86_64-linux-gnu/libgslcblas.a -lcubature -lm"
