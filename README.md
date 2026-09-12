@@ -49,6 +49,10 @@ and the limits of this precomputation boundary.
 
 ## Building on other systems
 
+Week 4 has started with Python observer-frame distance and resampling primitives.
+Attenuation generation and final production outputs are not connected yet; see
+[`docs/WEEK4_REVIEW.md`](docs/WEEK4_REVIEW.md) for scope and tests.
+
 The interface library requires GNU GCC with OpenMP, but **not** GSL/cubature:
 
 ```sh

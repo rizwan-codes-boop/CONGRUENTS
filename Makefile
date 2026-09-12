@@ -77,8 +77,15 @@ $(SHARED_LIBRARY): csrc/congruents.c csrc/preparation.c csrc/internal.h csrc/inc
 test-portable: shared
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_serial.py -v
 
-test: shared solver reference-week3 test-runtime build/direct_ionisation build/direct_preparation
+test: shared solver reference-week3 test-runtime build/direct_ionisation build/direct_preparation build/direct_observer
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
+
+build/direct_observer: tests/direct_observer.c cosmo_funcs.h cosmo_params.h astro_const.h physical_constants.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@
+
+.PHONY: test-week4
+test-week4: build/direct_observer
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p test_week4.py -v
 
 build/direct_ionisation: tests/direct_ionisation.c CR_spectra/ionisation.h physical_constants.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LDLIBS) -o $@
