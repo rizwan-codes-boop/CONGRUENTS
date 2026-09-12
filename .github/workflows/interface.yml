@@ -25,9 +25,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: sudo apt-get update && sudo apt-get install -y libgsl-dev libcubature-dev
+      - run: sudo apt-get update && sudo apt-get install -y libcubature-dev
+      # Distribution static GSL archives are not necessarily position independent.
+      # Keep private static linkage (symbol isolation), but build it with PIC.
+      - name: Build position-independent GSL 2.8
+        run: |
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 https://ftp.gnu.org/gnu/gsl/gsl-2.8.tar.gz -o gsl-2.8.tar.gz
+          echo "6a99eeed15632c6354895b1dd542ed5a855c0f15d9ad1326c6fe2b2c9e423190  gsl-2.8.tar.gz" | sha256sum --check
+          tar -xzf gsl-2.8.tar.gz
+          cd gsl-2.8
+          ./configure --prefix="$RUNNER_TEMP/gsl-pic" --with-pic --disable-shared
+          make -j2
+          make install
       - run: python -m pip install -e '.[units]'
       - run: >-
           make test CC=gcc PYTHON=python
-          CPPFLAGS="-I. -ICR_spectra -I/usr/include/gsl"
-          LDLIBS="/usr/lib/x86_64-linux-gnu/libgsl.a /usr/lib/x86_64-linux-gnu/libgslcblas.a -lcubature -lm"
+          CPPFLAGS="-I. -ICR_spectra -I$RUNNER_TEMP/gsl-pic/include -I$RUNNER_TEMP/gsl-pic/include/gsl -DCONGRUENTS_USE_SYSTEM_OPENMP"
+          LDLIBS="$RUNNER_TEMP/gsl-pic/lib/libgsl.a $RUNNER_TEMP/gsl-pic/lib/libgslcblas.a -lcubature -lm"
