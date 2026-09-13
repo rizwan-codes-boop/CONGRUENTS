@@ -10,4 +10,4 @@ with Preparation(load_catalogue(root/"input/cat_nt.txt"), Grid(16,16)) as prepar
     print("Emission components:", list(result.emission))
     print("IC primary disc shape:", result.emission["IC_primary_disc"].shape)
     print("Reduced grid only: not production results.")
-    # Optional explicit export: result.save("week3-results.npz")
+    # Optional explicit export: result.save("source-spectra.npz")

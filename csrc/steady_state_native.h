@@ -1,4 +1,4 @@
-/* Adapter copy of CONGRUENTS-i/CRe_steadystate.h, energy solver only.
+/* Adapter copy of improvised legacy code/CRe_steadystate.h, energy solver only.
  * Equations unchanged. LU status checks and allocation ownership supplied by
  * solver_runtime.h. Original reference header is never edited.
  */
@@ -638,4 +638,3 @@ int CRe_steadystate_solve( int structure, double E_e_lim__GeV[2], int n_E, doubl
 
 
 #endif
-

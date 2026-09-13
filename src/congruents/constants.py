@@ -1,4 +1,4 @@
-"""Native-unit constants frozen to CONGRUENTS-i/physical_constants.h.
+"""Native-unit constants frozen to improvised legacy code/physical_constants.h.
 Astropy converts user inputs; it does not silently replace these baseline values.
 """
 C = 2.99792458e10

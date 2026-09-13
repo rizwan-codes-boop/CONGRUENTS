@@ -91,5 +91,5 @@ def run(preparation, grid=None, threads=1, *, ebl_path=None, legacy_table_precis
     return RunResult(source,components,internal,external,distance,luminosity,
         {**source.metadata,"ebl_path":str(path.resolve()),"ebl_sha256":ebl.sha256,
          "python_source_sha256":_PYTHON_SOURCE_SHA256,
-         "observer_units":"GeV cm^-2 s^-1","attenuation_indexing":"CONGRUENTS-i writer",
+         "observer_units":"GeV cm^-2 s^-1","attenuation_indexing":"improvised legacy code writer",
          "complete_legacy_diagnostics":True})
