@@ -1,4 +1,4 @@
-"""Serial Python attenuation, retaining CONGRUENTS-i table and kernel rules."""
+"""Serial Python attenuation, retaining improvised legacy code table and kernel rules."""
 import hashlib
 import math
 from pathlib import Path

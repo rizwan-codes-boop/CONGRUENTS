@@ -1,4 +1,4 @@
-"""Serial model preparation in Python, preserving CONGRUENTS-i equations."""
+"""Serial model preparation in Python, preserving improvised legacy code equations."""
 import math
 import sys
 import numpy as np

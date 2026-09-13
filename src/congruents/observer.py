@@ -1,4 +1,4 @@
-"""Python observer-frame primitives matching the CONGRUENTS-i output writer.
+"""Python observer-frame primitives matching the improvised legacy code output writer.
 
 This is not an attenuation calculator or the complete production pipeline.
 Optical depths must already have the legacy output-grid indexing convention.

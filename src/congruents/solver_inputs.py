@@ -1,4 +1,4 @@
-"""Python-owned, pre-worker calculations from CONGRUENTS-i/spectra.c.
+"""Python-owned, pre-worker calculations from improvised legacy code/spectra.c.
 
 No native callbacks: these arrays are complete before galaxy workers start.
 Constants and algebra deliberately retain the scientific reference conventions.
